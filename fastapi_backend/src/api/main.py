@@ -76,3 +76,12 @@ app.include_router(health_router)
 app.include_router(data_router)
 app.include_router(nlq_router)
 app.include_router(supabase_router)
+
+
+if __name__ == "__main__":
+    # Allow running as: python -m src.api.main
+    import os
+    import uvicorn  # type: ignore
+
+    port = int(os.getenv("PORT", "3001"))
+    uvicorn.run("src.api.main:app", host="0.0.0.0", port=port, log_level="info")
