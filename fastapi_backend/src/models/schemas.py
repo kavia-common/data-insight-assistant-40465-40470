@@ -29,10 +29,11 @@ except Exception:  # pragma: no cover - fallback if bson not present at runtime
 
 # PUBLIC_INTERFACE
 class PyObjectId(ObjectId):
-    """Wrapper to allow Pydantic validation/serialization of MongoDB ObjectId."""
+    """Wrapper for MongoDB ObjectId kept for internal usage (no OpenAPI exposure)."""
 
     @classmethod
     def __get_validators__(cls):
+        # Retained for internal parsing where used, but avoid exposing in public models.
         yield cls.validate
 
     @classmethod
@@ -45,14 +46,6 @@ class PyObjectId(ObjectId):
         if isinstance(v, str) and ObjectId.is_valid(v):
             return ObjectId(v)
         raise TypeError("Invalid ObjectId")
-
-    @classmethod
-    def __get_pydantic_json_schema__(cls, core_schema, handler):
-        """Represent ObjectId as string in generated schema."""
-        schema = handler(core_schema)
-        # ensure string representation in OpenAPI
-        schema.update(type="string", example="60f7a2c7b4d1c8e5f4a9b0c1")
-        return schema
 
 
 def serialize_object_id(oid: Optional[Union[ObjectId, str]]) -> Optional[str]:
@@ -134,13 +127,14 @@ class DataItemIn(BaseModel):
 # PUBLIC_INTERFACE
 class DataItemOut(BaseModel):
     """Schema representing a data item as returned from the API (with id)."""
-    id: PyObjectId = Field(..., alias="_id", description="MongoDB ObjectId of the item.")
+    # Expose id as string in API schema for compatibility; value will be serialized from ObjectId to str.
+    id: str = Field(..., alias="_id", description="MongoDB ObjectId of the item as a 24-char hex string.")
     data: Dict[str, Any] = Field(..., description="Arbitrary item payload.")
 
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={ObjectId: serialize_object_id, PyObjectId: serialize_object_id},
+        json_encoders={ObjectId: serialize_object_id},
         json_schema_extra={
             "example": {
                 "id": "60f7a2c7b4d1c8e5f4a9b0c1",
