@@ -109,7 +109,12 @@ python run.py
 # or
 python main.py
 ```
-The app module path is src.api.main:app and the package root is src/, which is a Python package (has __init__.py). Uvicorn must be able to import this path.
+Notes:
+- The app module path is `src.api.main:app` and the package root is `src/` (it is a Python package with `__init__.py`).
+- Always run these commands from the `fastapi_backend` directory so `src` is on the Python path.
+- If an orchestrator provides placeholders like <host> or <port>, prefer explicit values:
+  host: 0.0.0.0
+  port: 3001
 
 ### Health readiness
 A lightweight health endpoint exists:
@@ -120,6 +125,17 @@ For readiness checks, probe:
 curl -sf http://localhost:3001/health >/dev/null
 ```
 Exit code 0 indicates the service is ready.
+
+### Quick verification script
+After installing dependencies, you can validate startup and the health endpoint locally:
+```
+python scripts/verify_startup.py
+```
+It will:
+- Verify FastAPI and Uvicorn imports
+- Import `src.api.main:app`
+- Start a temporary server on 0.0.0.0:3001 (or PORT) and probe GET /health
+- Exit with code 0 if ready
 
 ### Preview/Container Run
 If your environment provides a preview service (e.g., cloud dev environment), use either `uvicorn` or `python run.py`. Ensure:
