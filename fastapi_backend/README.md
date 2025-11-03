@@ -1,7 +1,7 @@
 # FastAPI Backend
 
 ## Overview
-This backend is a FastAPI application that provides:
+This backend is a FastAPI application that provides a pragmatic REST API with:
 - Health checks and diagnostics
 - CRUD endpoints for MongoDB-backed data under /data
 - A Natural Language Query (NLQ) endpoint under /nlq/query that deterministically converts simple natural language into MongoDB filters and options
@@ -74,22 +74,33 @@ uvicorn src.api.main:app --host 0.0.0.0 --port ${PORT:-3001} --reload
 - Interactive docs: http://localhost:3001/docs
 - OpenAPI JSON: http://localhost:3001/openapi.json
 
-On Windows (PowerShell), set environment variables with:
+On Windows (PowerShell), you can rely on the app automatically loading .env. To override just the port:
 ```
 $env:PORT="3001"
-# set other env vars similarly or rely on .env loading by the app
 uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload
 ```
 
+### Alternative: Python launcher
+You can also run using the provided launcher which reads PORT from settings and starts uvicorn:
+```
+python run.py
+```
+Hot reload can be enabled by:
+```
+UVICORN_RELOAD=true python run.py
+```
+
 ### Preview/Container Run
-If your environment provides a preview service (e.g., cloud dev environment), run the same uvicorn command. Ensure the container/service exposes the configured PORT and that .env is present in the container working directory.
+If your environment provides a preview service (e.g., cloud dev environment), use either `uvicorn` or `python run.py`. Ensure:
+- The service exposes the configured PORT (default 3001).
+- A .env file is present in the fastapi_backend working directory.
 
 ## Generating OpenAPI Spec
 A helper script is available to dump the OpenAPI schema into interfaces/openapi.json:
 ```
 python -m src.api.generate_openapi
 ```
-This imports the FastAPI app object and writes the current schema.
+This imports the FastAPI app object and writes the current schema to interfaces/openapi.json.
 
 ## MongoDB Connection
 The application uses Motor (AsyncIOMotorClient). On startup:
@@ -103,6 +114,12 @@ MONGO_URI=mongodb://localhost:27017
 MONGO_DB_NAME=exampledb
 MONGO_COLLECTION=items
 ```
+
+Connection examples in code (see src/db/mongo.py):
+- Connect on startup:
+  - The app calls connect_client(ping=bool(MONGO_PING_ON_STARTUP))
+- Access default collection:
+  - get_collection() uses MONGO_DB_NAME and MONGO_COLLECTION
 
 ## Example Requests
 
@@ -124,7 +141,6 @@ MONGO_COLLECTION=items
   ```
   {"status":"ok"}
   ```
-  Details about MongoDB and Supabase are logged in application logs.
 
 ### Data CRUD (/data)
 These routes expect a configured MongoDB and collection.
@@ -134,10 +150,6 @@ These routes expect a configured MongoDB and collection.
   curl -s -X POST http://localhost:3001/data \
     -H "Content-Type: application/json" \
     -d '{"data":{"name":"Alice","age":30,"country":"US"}}'
-  ```
-  Example response:
-  ```
-  {"id":"60f7a2c7b4d1c8e5f4a9b0c1","data":{"name":"Alice","age":30,"country":"US"}}
   ```
 
 - Get by id:
@@ -156,10 +168,6 @@ These routes expect a configured MongoDB and collection.
     --data-urlencode 'limit=10' \
     --data-urlencode 'offset=0'
   ```
-  Response (schema):
-  ```
-  {"items":[...],"meta":{"total":123,"limit":10,"offset":0}}
-  ```
 
 - Update:
   ```
@@ -171,7 +179,6 @@ These routes expect a configured MongoDB and collection.
 - Delete:
   ```
   curl -s -X DELETE -i http://localhost:3001/data/<id>
-  # Expect 204 No Content on success
   ```
 
 ### NLQ (/nlq/query)
@@ -218,7 +225,7 @@ Note: If ENABLE_NLQ=false, the endpoint returns 404.
 ## Supabase Integration
 - Controlled by ENABLE_SUPABASE.
 - When enabled, the system attempts to initialize a Supabase client using SUPABASE_URL and SUPABASE_ANON_KEY.
-- The /health endpoint reports a minimal Supabase health summary via logs.
+- The /health endpoint logs a minimal Supabase health summary.
 - No routes currently require Supabase to operate; it is optional.
 
 ## CORS
@@ -230,7 +237,8 @@ Logs are emitted in a lightweight JSON-like structure to stdout with fields for 
 ## Troubleshooting
 - 503 Database not available: Ensure MONGO_URI, MONGO_DB_NAME, and MONGO_COLLECTION are correctly set and MongoDB is reachable.
 - Invalid ObjectId: Confirm the id string is a 24-character hex value.
-- NLQ returns few/no results: The NLQ parser is rule-based; refine query or use explicit params.filter in /data.
+- NLQ returns few/no results: The NLQ parser is rule-based; refine the query or use explicit parameters with /data.
+- CORS blocked in browser: Confirm CORS_ALLOWED_ORIGINS includes your frontend origin or "*" for permissive setups.
 
 ## Project Layout
 - src/api/main.py: FastAPI app initialization and routing
@@ -239,5 +247,7 @@ Logs are emitted in a lightweight JSON-like structure to stdout with fields for 
 - src/models/schemas.py: Pydantic schemas for requests and responses
 - src/services/nlq_service.py: Deterministic NLQ parsing
 - src/services/supabase_client.py: Optional Supabase wrapper
+- src/api/generate_openapi.py: Utility to generate OpenAPI JSON
 - interfaces/openapi.json: OpenAPI schema output (can be generated)
+- run.py: Uvicorn launcher that reads PORT from settings
 - requirements.txt: Python dependencies
