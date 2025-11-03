@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Body
 from pydantic import BaseModel, Field
 
 from ..core.config import get_settings
@@ -97,7 +97,7 @@ def _apply_pagination(q: Any, limit: Optional[int], offset: Optional[int]) -> Tu
 
 
 # PUBLIC_INTERFACE
-@router.get(
+@router.post(
     "/query",
     response_model=SupabaseQueryResponse,
     summary="Query a Supabase table",
@@ -107,16 +107,18 @@ Query a Supabase table using optional filters, ordering, and pagination.
 Usage examples:
 
 - Basic:
-  GET /supabase/query?table=customers&limit=10
+  POST /supabase/query
+  body: {"table":"customers","limit":10}
 
-- With filters (provide as JSON in 'filters' body when using a client; for Swagger, try "Try it out"):
+- With filters (provide as JSON list in the body):
   filters: [
     {"column":"country","op":"eq","value":"US"},
     {"column":"name","op":"ilike","value":"%ann%"}
   ]
 
 - With ordering and pagination:
-  GET /supabase/query?table=orders&order_by=created_at&order_dir=desc&limit=20&offset=0
+  POST /supabase/query
+  body: {"table":"orders","order_by":"created_at","order_dir":"desc","limit":20,"offset":0}
 """,
     responses={
         200: {"description": "Query executed successfully."},
@@ -132,11 +134,10 @@ async def supabase_query(
     order_dir: Optional[Literal["asc", "desc"]] = Query("asc", description="Sort direction"),
     limit: Optional[int] = Query(50, ge=1, le=1000, description="Max rows to return"),
     offset: Optional[int] = Query(0, ge=0, description="Number of rows to skip"),
-    # Filters sent via query strings become unwieldy; accept as JSON body via "filters" form when available.
-    # For GET with FastAPI, we can also allow a JSON string in a query param but keep it simple:
-    filters: Optional[List[SupabaseFilter]] = Query(
+    # For POST, accept filters as JSON body to support complex structures
+    filters: Optional[List[SupabaseFilter]] = Body(
         default=None,
-        description="Optional list of filters. In interactive docs, click 'Add item' to supply filters.",
+        description="Optional list of filters to apply to the table query.",
     ),
 ) -> SupabaseQueryResponse:
     """

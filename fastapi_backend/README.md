@@ -280,27 +280,34 @@ Note: If ENABLE_NLQ=false, the endpoint returns 404.
 - Controlled by ENABLE_SUPABASE.
 - When enabled, the system attempts to initialize a Supabase client using SUPABASE_URL and SUPABASE_ANON_KEY.
 - The /health endpoint logs a minimal Supabase health summary.
-- New route: GET /supabase/query to query a specified table with optional filters, ordering, limit, and offset.
+- New route: POST /supabase/query to query a specified table with optional filters (body), ordering, limit, and offset.
 
 ### Example usage
 - Basic:
 ```
-curl -s "http://localhost:3001/supabase/query?table=customers&limit=5"
+curl -s -X POST "http://localhost:3001/supabase/query?table=customers&limit=5"
 ```
 
 - With ordering:
 ```
-curl -s "http://localhost:3001/supabase/query?table=orders&order_by=created_at&order_dir=desc&limit=10"
+curl -s -X POST "http://localhost:3001/supabase/query?table=orders&order_by=created_at&order_dir=desc&limit=10"
 ```
 
-- With filters (use interactive docs to add multiple filters, or a client that can send arrays):
-In Swagger UI (http://localhost:3001/docs), expand GET /supabase/query, click "Try it out",
-add items under "filters":
+- With filters (use interactive docs to add multiple filters, or send a JSON body):
+In Swagger UI (http://localhost:3001/docs), expand POST /supabase/query, click "Try it out",
+add items under "filters" (request body):
 [
   {"column":"country","op":"eq","value":"US"},
   {"column":"name","op":"ilike","value":"%ann%"}
 ]
 Then Execute.
+
+Or via curl:
+```
+curl -s -X POST "http://localhost:3001/supabase/query?table=customers&limit=5" \
+  -H "Content-Type: application/json" \
+  -d '[{"column":"country","op":"eq","value":"US"}]'
+```
 
 Notes:
 - Supported operators: eq, neq, lt, lte, gt, gte, ilike.
