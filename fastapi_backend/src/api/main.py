@@ -61,7 +61,11 @@ async def shutdown_event():
 # Root health remains available (back-compat)
 @app.get("/", summary="Health Check", tags=["Health"])
 def health_check_root():
-    """Root-level health check maintained for backwards compatibility."""
+    """Root-level health check maintained for backwards compatibility.
+
+    Returns:
+        A simple JSON message indicating the service is healthy.
+    """
     return {"message": "Healthy"}
 
 # Include routers (ensure all are mounted)
