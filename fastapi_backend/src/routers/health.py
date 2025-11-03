@@ -70,3 +70,16 @@ async def get_health() -> HealthResponse:
     # We keep HTTP 200 even if deps are down to allow liveness probes to pass by default.
     # If strict readiness is desired, this endpoint could return 503 when required deps fail.
     return HealthResponse(status="ok")
+
+
+# PUBLIC_INTERFACE
+@router.get(
+    "/healthz",
+    response_model=HealthResponse,
+    summary="Service health (alias)",
+    description="Alias health endpoint commonly used by platforms for liveness checks.",
+    responses={200: {"description": "Service is healthy"}},
+)
+async def get_healthz() -> HealthResponse:
+    """Alias of /health that returns the same response payload."""
+    return await get_health()
