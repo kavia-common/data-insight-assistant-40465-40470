@@ -2,10 +2,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 
-from ..core.config import settings
+from ..core.config import get_settings
+from ..core.logger import get_logger
 from ..routers.health import router as health_router
 from ..routers.data import router as data_router
 from ..routers.nlq import router as nlq_router
+
+settings = get_settings()
+logger = get_logger(__name__)
 
 # Initialize FastAPI application with metadata and orjson for performance
 app = FastAPI(
@@ -20,14 +24,17 @@ app = FastAPI(
     ],
 )
 
-# CORS - permissive for now, will be tightened in later steps
+# CORS configuration from settings
+origins = settings.cors_origins_list()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.CORS_ALLOWED_ORIGINS == "*" else [o.strip() for o in settings.CORS_ALLOWED_ORIGINS.split(",") if o.strip()],
+    allow_origins=origins if origins != ["*"] else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+logger.info("FastAPI app initialized", extra={"app_name": settings.APP_NAME, "env": settings.APP_ENV})
 
 # Root health remains available (back-compat)
 @app.get("/", summary="Health Check", tags=["Health"])

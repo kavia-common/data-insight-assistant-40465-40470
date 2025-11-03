@@ -1,36 +1,59 @@
 """
 Application configuration module.
 
-This placeholder will be expanded in subsequent steps to load environment
-variables and provide strongly-typed settings across the app.
+Provides strongly-typed settings using Pydantic BaseSettings. Values are loaded
+from environment variables and .env (via python-dotenv automatically loaded by
+Pydantic). Use get_settings() to obtain a cached Settings instance.
 """
 
-from typing import Optional
-import os
+from functools import lru_cache
+from typing import Optional, List
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 # PUBLIC_INTERFACE
-class Settings:
-    """Minimal settings placeholder. Will be expanded with Pydantic in next steps."""
-    APP_NAME: str = os.getenv("APP_NAME", "Data Insight Assistant")
-    APP_ENV: str = os.getenv("APP_ENV", "development")
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    PORT: int = int(os.getenv("PORT", "3001"))
-    CORS_ALLOWED_ORIGINS: str = os.getenv("CORS_ALLOWED_ORIGINS", "*")
+class Settings(BaseSettings):
+    """Centralized application configuration powered by Pydantic BaseSettings."""
+
+    # App
+    APP_NAME: str = Field(default="Data Insight Assistant", description="Application name")
+    APP_ENV: str = Field(default="development", description="Execution environment")
+    LOG_LEVEL: str = Field(default="INFO", description="Root log level (DEBUG, INFO, WARNING, ERROR)")
+    PORT: int = Field(default=3001, description="Port for the FastAPI server")
+    CORS_ALLOWED_ORIGINS: str = Field(default="*", description="Comma-separated list of allowed CORS origins or '*'")
 
     # Database
-    MONGO_URI: Optional[str] = os.getenv("MONGO_URI")
-    MONGO_DB_NAME: Optional[str] = os.getenv("MONGO_DB_NAME")
-    MONGO_COLLECTION: Optional[str] = os.getenv("MONGO_COLLECTION")
+    MONGO_URI: Optional[str] = Field(default=None, description="MongoDB connection URI")
+    MONGO_DB_NAME: Optional[str] = Field(default=None, description="MongoDB database name")
+    MONGO_COLLECTION: Optional[str] = Field(default=None, description="Default MongoDB collection name")
 
     # Feature flags
-    ENABLE_SUPABASE: str = os.getenv("ENABLE_SUPABASE", "false")
-    ENABLE_NLQ: str = os.getenv("ENABLE_NLQ", "true")
-    ENABLE_NLQ_AI: str = os.getenv("ENABLE_NLQ_AI", "false")
+    ENABLE_SUPABASE: bool = Field(default=False, description="Enable Supabase integration")
+    ENABLE_NLQ: bool = Field(default=True, description="Enable NLQ endpoints")
+    ENABLE_NLQ_AI: bool = Field(default=False, description="Enable AI-augmented NLQ")
 
     # 3rd party keys (optional)
-    SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")
-    SUPABASE_ANON_KEY: Optional[str] = os.getenv("SUPABASE_ANON_KEY")
-    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
+    SUPABASE_URL: Optional[str] = Field(default=None, description="Supabase project URL")
+    SUPABASE_ANON_KEY: Optional[str] = Field(default=None, description="Supabase anon API key")
+    OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key (optional)")
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # Convenience helpers (non-env)
+    def cors_origins_list(self) -> List[str]:
+        """
+        Parse CORS_ALLOWED_ORIGINS into a list. '*' returns ['*'] to indicate permissive mode.
+        """
+        raw = (self.CORS_ALLOWED_ORIGINS or "").strip()
+        if raw == "*" or raw == "":
+            return ["*"]
+        return [o.strip() for o in raw.split(",") if o.strip()]
 
 
-settings = Settings()
+# PUBLIC_INTERFACE
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Return a cached Settings instance."""
+    return Settings()
