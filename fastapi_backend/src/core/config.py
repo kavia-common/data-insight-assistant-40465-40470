@@ -4,6 +4,11 @@ Application configuration module.
 Provides strongly-typed settings using Pydantic BaseSettings. Values are loaded
 from environment variables and .env (via python-dotenv automatically loaded by
 Pydantic). Use get_settings() to obtain a cached Settings instance.
+
+Supabase integration:
+- Controlled by ENABLE_SUPABASE (default False).
+- Requires SUPABASE_URL and SUPABASE_ANON_KEY to initialize the optional client.
+- See services/supabase_client.py for the optional wrapper and health helper.
 """
 
 from functools import lru_cache
