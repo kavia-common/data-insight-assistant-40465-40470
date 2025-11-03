@@ -226,7 +226,31 @@ Note: If ENABLE_NLQ=false, the endpoint returns 404.
 - Controlled by ENABLE_SUPABASE.
 - When enabled, the system attempts to initialize a Supabase client using SUPABASE_URL and SUPABASE_ANON_KEY.
 - The /health endpoint logs a minimal Supabase health summary.
-- No routes currently require Supabase to operate; it is optional.
+- New route: GET /supabase/query to query a specified table with optional filters, ordering, limit, and offset.
+
+### Example usage
+- Basic:
+```
+curl -s "http://localhost:3001/supabase/query?table=customers&limit=5"
+```
+
+- With ordering:
+```
+curl -s "http://localhost:3001/supabase/query?table=orders&order_by=created_at&order_dir=desc&limit=10"
+```
+
+- With filters (use interactive docs to add multiple filters, or a client that can send arrays):
+In Swagger UI (http://localhost:3001/docs), expand GET /supabase/query, click "Try it out",
+add items under "filters":
+[
+  {"column":"country","op":"eq","value":"US"},
+  {"column":"name","op":"ilike","value":"%ann%"}
+]
+Then Execute.
+
+Notes:
+- Supported operators: eq, neq, lt, lte, gt, gte, ilike.
+- The endpoint returns 404 if ENABLE_SUPABASE=false and 503 if credentials are missing.
 
 ## CORS
 CORS is configured via the CORS_ALLOWED_ORIGINS environment variable. Provide a comma-separated list of origins or "*" to allow all. The app configures CORSMiddleware accordingly.

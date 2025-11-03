@@ -7,6 +7,7 @@ from ..core.logger import get_logger
 from ..routers.health import router as health_router
 from ..routers.data import router as data_router
 from ..routers.nlq import router as nlq_router
+from ..routers.supabase import router as supabase_router
 from ..db.mongo import connect_client, close_client  # lifecycle hooks
 
 settings = get_settings()
@@ -22,6 +23,7 @@ app = FastAPI(
         {"name": "Health", "description": "Service health and diagnostics"},
         {"name": "Data", "description": "Data access and management"},
         {"name": "NLQ", "description": "Natural Language Query endpoints"},
+        {"name": "Supabase", "description": "Supabase table query endpoints"},
     ],
 )
 
@@ -73,3 +75,4 @@ def health_check_root():
 app.include_router(health_router)
 app.include_router(data_router)
 app.include_router(nlq_router)
+app.include_router(supabase_router)
