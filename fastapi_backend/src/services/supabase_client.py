@@ -12,16 +12,14 @@ Design notes:
   without causing import-time failures when disabled or missing configuration.
 """
 
-from typing import Optional
-
-from supabase import Client, create_client  # type: ignore
+from typing import Optional, Any
 
 from ..core.config import get_settings
 from ..core.logger import get_logger
 
 _logger = get_logger(__name__)
 
-_client: Optional[Client] = None
+_client: Optional[Any] = None  # avoid hard import when package absent
 
 
 def _settings():
@@ -45,7 +43,7 @@ def is_supabase_enabled() -> bool:
 
 
 # PUBLIC_INTERFACE
-def get_supabase_client() -> Optional[Client]:
+def get_supabase_client() -> Optional[Any]:
     """
     Return a cached Supabase client if configuration and feature flag allow it, else None.
 
@@ -63,6 +61,7 @@ def get_supabase_client() -> Optional[Client]:
         return None
 
     try:
+        from supabase import create_client  # type: ignore
         s = _settings()
         # create_client validates URL/key formats internally and can raise.
         _client = create_client(s.SUPABASE_URL, s.SUPABASE_ANON_KEY)  # type: ignore[arg-type]
