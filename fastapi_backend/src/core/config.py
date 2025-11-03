@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     MONGO_URI: Optional[str] = Field(default=None, description="MongoDB connection URI")
     MONGO_DB_NAME: Optional[str] = Field(default=None, description="MongoDB database name")
     MONGO_COLLECTION: Optional[str] = Field(default=None, description="Default MongoDB collection name")
+    MONGO_PING_ON_STARTUP: bool = Field(
+        default=True,
+        description="When true, perform a MongoDB ping during app startup to verify connectivity.",
+    )
 
     # Feature flags
     ENABLE_SUPABASE: bool = Field(default=False, description="Enable Supabase integration")

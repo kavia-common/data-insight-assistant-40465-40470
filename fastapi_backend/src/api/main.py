@@ -7,6 +7,7 @@ from ..core.logger import get_logger
 from ..routers.health import router as health_router
 from ..routers.data import router as data_router
 from ..routers.nlq import router as nlq_router
+from ..db.mongo import connect_client, close_client  # lifecycle hooks
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -35,6 +36,28 @@ app.add_middleware(
 )
 
 logger.info("FastAPI app initialized", extra={"app_name": settings.APP_NAME, "env": settings.APP_ENV})
+
+
+@app.on_event("startup")
+async def startup_event():
+    """FastAPI startup hook.
+
+    Connects to MongoDB when MONGO_URI is configured. Performs an optional 'ping'
+    check to validate connectivity. Startup continues even if ping fails to avoid
+    hard dependency during environments without DB access.
+    """
+    # Optional ping; in many deployments it's useful to flip this to True
+    await connect_client(ping=True)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """FastAPI shutdown hook.
+
+    Closes the MongoDB client gracefully if it was initialized.
+    """
+    await close_client()
+
 
 # Root health remains available (back-compat)
 @app.get("/", summary="Health Check", tags=["Health"])
