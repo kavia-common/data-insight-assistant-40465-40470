@@ -67,7 +67,13 @@ Note: When MONGO_URI or database settings are not provided, /data and /nlq route
 ### Local Development (uvicorn)
 From the fastapi_backend directory:
 ```
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+# Optionally load env
 export $(grep -v '^#' .env | xargs) 2>/dev/null || true
+# Start on 0.0.0.0:3001 (PORT overrides default)
 uvicorn src.api.main:app --host 0.0.0.0 --port ${PORT:-3001} --reload
 ```
 - The API will be available at http://localhost:3001 by default.
@@ -76,6 +82,10 @@ uvicorn src.api.main:app --host 0.0.0.0 --port ${PORT:-3001} --reload
 
 On Windows (PowerShell), you can rely on the app automatically loading .env. To override just the port:
 ```
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -r requirements.txt
 $env:PORT="3001"
 uvicorn src.api.main:app --host 0.0.0.0 --port 3001 --reload
 ```
@@ -90,10 +100,38 @@ Hot reload can be enabled by:
 UVICORN_RELOAD=true python run.py
 ```
 
+### Start command for container/orchestrator
+Ensure the service binds to 0.0.0.0 and port 3001 for readiness:
+```
+python -m uvicorn src.api.main:app --host 0.0.0.0 --port 3001
+# or
+python run.py
+# or
+python main.py
+```
+The app module path is src.api.main:app and the package root is src/, which is a Python package (has __init__.py). Uvicorn must be able to import this path.
+
+### Health readiness
+A lightweight health endpoint exists:
+- GET /health -> {"status":"ok"}
+- GET / -> {"message":"Healthy"}  (root alias)
+For readiness checks, probe:
+```
+curl -sf http://localhost:3001/health >/dev/null
+```
+Exit code 0 indicates the service is ready.
+
 ### Preview/Container Run
 If your environment provides a preview service (e.g., cloud dev environment), use either `uvicorn` or `python run.py`. Ensure:
 - The service exposes the configured PORT (default 3001).
-- A .env file is present in the fastapi_backend working directory.
+- A .env file is present in the fastapi_backend working directory (copy .env.example).
+- The start command uses host 0.0.0.0 and port 3001.
+
+### Troubleshooting startup
+- ModuleNotFoundError: fastapi — install deps with `pip install -r requirements.txt` in an active virtualenv.
+- ImportError: cannot import src.api.main:app — ensure you run from fastapi_backend directory so that `src` package is on sys.path, or set PYTHONPATH to include this directory.
+- Address already in use — another process is listening on 3001; stop it or change PORT.
+- Requirements install issues — upgrade pip and retry.
 
 ## Generating OpenAPI Spec
 A helper script is available to dump the OpenAPI schema into interfaces/openapi.json:

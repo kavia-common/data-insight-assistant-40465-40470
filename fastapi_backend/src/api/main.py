@@ -61,7 +61,7 @@ async def shutdown_event():
 
 
 # Root health remains available (back-compat)
-@app.get("/", summary="Health Check", tags=["Health"])
+@app.get("/", summary="Health Check (root)", tags=["Health"])
 def health_check_root():
     """Root-level health check maintained for backwards compatibility.
 
