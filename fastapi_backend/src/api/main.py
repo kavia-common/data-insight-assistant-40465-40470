@@ -25,7 +25,7 @@ app = FastAPI(
     ],
 )
 
-# CORS configuration from settings
+# CORS configuration driven by settings
 origins = settings.cors_origins_list()
 app.add_middleware(
     CORSMiddleware,
@@ -43,11 +43,10 @@ async def startup_event():
     """FastAPI startup hook.
 
     Connects to MongoDB when MONGO_URI is configured. Performs an optional 'ping'
-    check to validate connectivity. Startup continues even if ping fails to avoid
-    hard dependency during environments without DB access.
+    check to validate connectivity based on settings.MONGO_PING_ON_STARTUP. Startup
+    continues even if ping fails to avoid hard dependency during environments without DB access.
     """
-    # Optional ping; in many deployments it's useful to flip this to True
-    await connect_client(ping=True)
+    await connect_client(ping=bool(settings.MONGO_PING_ON_STARTUP))
 
 
 @app.on_event("shutdown")
@@ -65,7 +64,7 @@ def health_check_root():
     """Root-level health check maintained for backwards compatibility."""
     return {"message": "Healthy"}
 
-# Include routers
+# Include routers (ensure all are mounted)
 app.include_router(health_router)
 app.include_router(data_router)
 app.include_router(nlq_router)
