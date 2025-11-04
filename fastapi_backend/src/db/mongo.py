@@ -49,12 +49,26 @@ async def connect_client(ping: bool = False) -> Optional[AsyncIOMotorClient]:
         return _client
 
     if not settings.MONGO_URI:
-        _logger.info("MongoDB URI not configured; skipping client initialization.")
+        _logger.info(
+            "MongoDB URI not configured; skipping client initialization.",
+            extra={
+                "mongodb_uri_set": False,
+                "mongodb_db_name_set": bool(settings.MONGO_DB_NAME),
+                "mongodb_collection_set": bool(settings.MONGO_COLLECTION),
+            },
+        )
         return None
 
     try:
         _client = AsyncIOMotorClient(settings.MONGO_URI)
-        _logger.info("MongoDB client initialized.", extra={"mongodb_uri_set": True})
+        _logger.info(
+            "MongoDB client initialized.",
+            extra={
+                "mongodb_uri_set": True,
+                "mongodb_db_name_set": bool(settings.MONGO_DB_NAME),
+                "mongodb_collection_set": bool(settings.MONGO_COLLECTION),
+            },
+        )
 
         if ping:
             try:

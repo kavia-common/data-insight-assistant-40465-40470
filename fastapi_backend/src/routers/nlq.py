@@ -14,10 +14,18 @@ router = APIRouter(prefix="/nlq", tags=["NLQ"])
 def _get_collection_or_503(name: Optional[str]):
     """
     Internal: Get a MongoDB collection by name or the default one, else 503.
+
+    503 is returned only when DB is not configured or cannot be reached.
     """
     coll = get_collection(name)
     if coll is None:
-        raise HTTPException(status_code=503, detail="Database not configured or unavailable.")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Database not configured or unavailable. "
+                "Ensure MONGO_URI, MONGO_DB_NAME, and MONGO_COLLECTION are set and MongoDB is reachable."
+            ),
+        )
     return coll
 
 

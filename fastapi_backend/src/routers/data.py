@@ -21,10 +21,19 @@ router = APIRouter(prefix="/data", tags=["Data"])
 def _get_coll_or_503():
     """
     Internal helper to get default collection or raise 503.
+
+    Raises 503 only when the database is truly unavailable or not configured.
     """
     coll = get_collection()
     if coll is None:
-        raise HTTPException(status_code=503, detail="Database not configured or unavailable.")
+        # Provide actionable guidance in the error details
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Database not configured or unavailable. "
+                "Ensure MONGO_URI, MONGO_DB_NAME, and MONGO_COLLECTION are set and MongoDB is reachable."
+            ),
+        )
     return coll
 
 

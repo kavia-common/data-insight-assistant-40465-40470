@@ -34,8 +34,10 @@ async def _mongo_ping() -> Dict[str, Any]:
     response_model=HealthResponse,
     summary="Service health",
     description=(
-        "Health endpoint that reports app status, MongoDB connectivity (best-effort ping), "
-        "and Supabase availability if enabled."
+        "Liveness/health endpoint. Always returns 200 when the app is up. "
+        "Performs a best-effort MongoDB ping if configured and logs results; "
+        "also reports Supabase availability if enabled. "
+        "This endpoint is intended for liveness checks; it does not fail the request when dependencies are down."
     ),
     responses={
         200: {"description": "Service is healthy"},
@@ -44,10 +46,14 @@ async def _mongo_ping() -> Dict[str, Any]:
 )
 async def get_health() -> HealthResponse:
     """
-    Return a simple health status response. Extended diagnostics are included in headers/logs.
+    Root health indicator used for liveness. Always returns 200 with {"status":"ok"}.
 
-    The response 'status' is 'ok' when the application is running. MongoDB and Supabase
-    status are logged and can be inspected in application logs.
+    Diagnostics:
+      - MongoDB: If configured, performs ping and logs availability.
+      - Supabase: Logs enabled/configured/available summary.
+
+    For strict readiness, use application logs or create a dedicated readiness endpoint
+    in future that returns 503 when dependencies are unavailable.
     """
     settings = get_settings()
 
@@ -67,8 +73,7 @@ async def get_health() -> HealthResponse:
         },
     )
 
-    # We keep HTTP 200 even if deps are down to allow liveness probes to pass by default.
-    # If strict readiness is desired, this endpoint could return 503 when required deps fail.
+    # Always 200 for liveness
     return HealthResponse(status="ok")
 
 

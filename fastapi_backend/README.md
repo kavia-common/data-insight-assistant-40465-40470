@@ -42,6 +42,12 @@ An .env.example is provided with all supported keys. Copy it to .env and adjust 
 ```
 cp .env.example .env
 ```
+Be sure to set these for MongoDB:
+- MONGO_URI
+- MONGO_DB_NAME
+- MONGO_COLLECTION
+
+Without these, /data and /nlq endpoints will return 503 with detail "Database not configured or unavailable." Health endpoints still return 200.
 
 ### Supported Environment Variables
 - APP_NAME: Application name for OpenAPI metadata
