@@ -1,5 +1,5 @@
 """
-Pydantic schemas for API requests and responses, including MongoDB ObjectId handling,
+Pydantic schemas for API requests and responses, including SQL-friendly ID handling,
 query parameters for filtering/pagination/sorting, data item models, and NLQ types.
 """
 
@@ -9,53 +9,13 @@ from pydantic import BaseModel, Field, ConfigDict
 
 
 # ---------------------------------------------------------------------------
-# MongoDB ObjectId utilities and serializer
+# (Removed) MongoDB ObjectId utilities
 # ---------------------------------------------------------------------------
-try:
-    from bson import ObjectId  # type: ignore
-except Exception:  # pragma: no cover - fallback if bson not present at runtime
-    class ObjectId(str):  # type: ignore
-        """Fallback minimal ObjectId stub for environments without bson."""
 
-        @classmethod
-        def is_valid(cls, oid: Any) -> bool:
-            # naive validation: 24 hex chars
-            try:
-                s = str(oid)
-                return len(s) == 24 and all(c in "0123456789abcdefABCDEF" for c in s)
-            except Exception:
-                return False
-
-
-# PUBLIC_INTERFACE
-class PyObjectId(ObjectId):
-    """Wrapper for MongoDB ObjectId kept for internal usage (no OpenAPI exposure)."""
-
-    @classmethod
-    def __get_validators__(cls):
-        # Retained for internal parsing where used, but avoid exposing in public models.
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v: Any):
-        """Validate and coerce input to a BSON ObjectId."""
-        if isinstance(v, ObjectId):
-            return v
-        if isinstance(v, cls):
-            return ObjectId(str(v))
-        if isinstance(v, str) and ObjectId.is_valid(v):
-            return ObjectId(v)
-        raise TypeError("Invalid ObjectId")
-
-
-def serialize_object_id(oid: Optional[Union[ObjectId, str]]) -> Optional[str]:
-    """Helper to serialize ObjectId to string safely."""
+def serialize_object_id(oid):
+    """Backwards-compat helper; now simply cast to string."""
     if oid is None:
         return None
-    if isinstance(oid, ObjectId):
-        return str(oid)
-    if isinstance(oid, str):
-        return oid
     return str(oid)
 
 
@@ -127,17 +87,15 @@ class DataItemIn(BaseModel):
 # PUBLIC_INTERFACE
 class DataItemOut(BaseModel):
     """Schema representing a data item as returned from the API (with id)."""
-    # Expose id as string in API schema for compatibility; value will be serialized from ObjectId to str.
-    id: str = Field(..., alias="_id", description="MongoDB ObjectId of the item as a 24-char hex string.")
+    # Expose id as string in API schema for compatibility; UUID string for Postgres.
+    id: str = Field(..., alias="_id", description="Item identifier (UUID string).")
     data: Dict[str, Any] = Field(..., description="Arbitrary item payload.")
 
     model_config = ConfigDict(
         populate_by_name=True,
-        arbitrary_types_allowed=True,
-        json_encoders={ObjectId: serialize_object_id},
         json_schema_extra={
             "example": {
-                "id": "60f7a2c7b4d1c8e5f4a9b0c1",
+                "id": "f3b803f2-8c9e-4f5b-9b64-8cd3f1a5b7e1",
                 "data": {"name": "Alice", "age": 30, "country": "US"},
             }
         },

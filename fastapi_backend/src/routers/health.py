@@ -1,9 +1,12 @@
 from typing import Any, Dict
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+
 from ..core.config import get_settings
 from ..core.logger import get_logger
-from ..db.mongo import get_client
+from ..db.sqlalchemy import get_db
 from ..models.schemas import HealthResponse
 from ..services.supabase_client import supabase_health
 
@@ -12,20 +15,14 @@ router = APIRouter(prefix="/health", tags=["Health"])
 _logger = get_logger(__name__)
 
 
-async def _mongo_ping() -> Dict[str, Any]:
-    """
-    Attempt to ping MongoDB if a client exists.
-    Returns a dict with available flag and optional error.
-    """
-    client = get_client()
-    if client is None:
-        return {"configured": False, "available": False}
+def _db_ping(db: Session) -> Dict[str, Any]:
+    """Perform a lightweight DB ping using SELECT 1."""
     try:
-        await client.admin.command("ping")
-        return {"configured": True, "available": True}
+        db.execute(text("SELECT 1"))
+        return {"available": True}
     except Exception as exc:
-        _logger.error("MongoDB ping failed in /health.", exc_info=exc)
-        return {"configured": True, "available": False, "error": str(exc)}
+        _logger.error("Database ping failed in /health.", exc_info=exc)
+        return {"available": False, "error": str(exc)}
 
 
 # PUBLIC_INTERFACE
@@ -35,45 +32,31 @@ async def _mongo_ping() -> Dict[str, Any]:
     summary="Service health",
     description=(
         "Liveness/health endpoint. Always returns 200 when the app is up. "
-        "Performs a best-effort MongoDB ping if configured and logs results; "
-        "also reports Supabase availability if enabled. "
-        "This endpoint is intended for liveness checks; it does not fail the request when dependencies are down."
+        "Executes a lightweight 'SELECT 1' against the database and reports Supabase availability."
     ),
     responses={
         200: {"description": "Service is healthy"},
-        503: {"description": "Service degraded or dependencies unavailable"},
     },
 )
-async def get_health() -> HealthResponse:
+def get_health(db: Session = Depends(get_db)) -> HealthResponse:
     """
-    Root health indicator used for liveness. Always returns 200 with {"status":"ok"}.
-
-    Diagnostics:
-      - MongoDB: If configured, performs ping and logs availability.
-      - Supabase: Logs enabled/configured/available summary.
-
-    For strict readiness, use application logs or create a dedicated readiness endpoint
-    in future that returns 503 when dependencies are unavailable.
+    Root health indicator used for liveness. Always returns 200 with {'status':'ok'}.
+    Also logs DB and Supabase availability diagnostics.
     """
     settings = get_settings()
 
-    # MongoDB best-effort ping
-    mongo = await _mongo_ping()
-
-    # Supabase health indicator (non-async)
+    db_status = _db_ping(db)
     sb = supabase_health()
 
-    # Log structured diagnostics for observability
     _logger.info(
         "Health diagnostics",
         extra={
             "env": settings.APP_ENV,
-            "mongo": mongo,
+            "db": db_status,
             "supabase": sb,
         },
     )
 
-    # Always 200 for liveness
     return HealthResponse(status="ok")
 
 
@@ -85,6 +68,6 @@ async def get_health() -> HealthResponse:
     description="Alias health endpoint commonly used by platforms for liveness checks.",
     responses={200: {"description": "Service is healthy"}},
 )
-async def get_healthz() -> HealthResponse:
+def get_healthz(db: Session = Depends(get_db)) -> HealthResponse:
     """Alias of /health that returns the same response payload."""
-    return await get_health()
+    return get_health(db)

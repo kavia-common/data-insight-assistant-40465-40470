@@ -22,10 +22,9 @@ pydantic-settings>=2.7.0,<3
 typing_extensions>=4.14.0,<5
 annotated-types>=0.6,<1
 
-# MongoDB stack
-pymongo>=4.6,<5
-motor>=3.5,<4
-dnspython>=2.5,<3
+# SQLAlchemy / Postgres
+SQLAlchemy>=2.0,<3
+psycopg2-binary>=2.9,<3
 
 # Misc runtime deps
 python-dotenv>=1.0.1,<2

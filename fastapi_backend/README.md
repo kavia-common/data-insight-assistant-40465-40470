@@ -3,18 +3,17 @@
 ## Overview
 This backend is a FastAPI application that provides a pragmatic REST API with:
 - Health checks and diagnostics
-- CRUD endpoints for MongoDB-backed data under /data
-- A Natural Language Query (NLQ) endpoint under /nlq/query that deterministically converts simple natural language into MongoDB filters and options
-- Optional Supabase integration (feature-flagged)
+- CRUD endpoints for SQLAlchemy-backed data under /data (Postgres on Supabase)
+- A Natural Language Query (NLQ) endpoint under /nlq/query that deterministically converts simple natural language into filters and options and queries a JSONB-backed table
+- Optional Supabase REST client integration (feature-flagged) under /supabase
 - Configurable CORS and structured JSON-like logging
 
-The application is designed to operate with or without a live MongoDB connection. It will start even if the database is not reachable, allowing you to test health and static routes in constrained environments.
+The application is designed to operate with a Supabase Postgres database via SQLAlchemy.
 
 ## Requirements
 - Python 3.10+
 - pip (or a compatible package manager)
-- Optional: a running MongoDB instance if you want to exercise the /data and /nlq endpoints
-- Optional: Supabase project credentials if you enable Supabase features
+- A Supabase Postgres connection string (see Environment Configuration)
 
 ## Installation
 1. Create and activate a virtual environment:
@@ -42,12 +41,9 @@ An .env.example is provided with all supported keys. Copy it to .env and adjust 
 ```
 cp .env.example .env
 ```
-Be sure to set these for MongoDB:
-- MONGO_URI
-- MONGO_DB_NAME
-- MONGO_COLLECTION
 
-Without these, /data and /nlq endpoints will return 503 with detail "Database not configured or unavailable." Health endpoints still return 200.
+Required database variable:
+- SUPABASE_DB_CONNECTION_STRING: Postgres connection string for SQLAlchemy (e.g., postgresql://user:pass@host:5432/postgres)
 
 ### Supported Environment Variables
 - APP_NAME: Application name for OpenAPI metadata
@@ -55,18 +51,13 @@ Without these, /data and /nlq endpoints will return 503 with detail "Database no
 - LOG_LEVEL: Logging level (DEBUG, INFO, WARNING, ERROR)
 - PORT: Port FastAPI/uvicorn should listen on (defaults to 3001)
 - CORS_ALLOWED_ORIGINS: Comma-separated list of allowed origins (or "*" for all)
-- MONGO_URI: MongoDB connection string (e.g., mongodb://localhost:27017 or mongodb+srv://...)
-- MONGO_DB_NAME: MongoDB database name
-- MONGO_COLLECTION: Default collection name for /data routes and default NLQ target
-- MONGO_PING_ON_STARTUP: true/false; if true, attempts a ping on startup for quick validation
-- ENABLE_SUPABASE: true/false; feature flag for Supabase integration
-- SUPABASE_URL: Supabase project URL (required when ENABLE_SUPABASE=true)
-- SUPABASE_ANON_KEY: Supabase anon key (required when ENABLE_SUPABASE=true)
+- SUPABASE_DB_CONNECTION_STRING: Postgres connection string used by SQLAlchemy
+- ENABLE_SUPABASE: true/false; feature flag for Supabase REST client integration under /supabase
+- SUPABASE_URL: Supabase project URL (required when ENABLE_SUPABASE=true for /supabase)
+- SUPABASE_ANON_KEY: Supabase anon key (required when ENABLE_SUPABASE=true for /supabase)
 - ENABLE_NLQ: true/false; enables the /nlq endpoints
 - ENABLE_NLQ_AI: true/false; placeholder for future AI-augmented NLQ parsing
 - OPENAI_API_KEY: Optional key for future AI integrations
-
-Note: When MONGO_URI or database settings are not provided, /data and /nlq routes will respond with 503 errors. The app still runs and health endpoints will function for liveness checks.
 
 ## Running the App
 
@@ -124,7 +115,7 @@ Notes:
 
 ### Health readiness
 A lightweight health endpoint exists:
-- GET /health -> {"status":"ok"}
+- GET /health -> {"status":"ok"} (executes SELECT 1 against the database)
 - GET / -> {"message":"Healthy"}  (root alias)
 For readiness checks, probe:
 ```
@@ -162,24 +153,13 @@ python -m src.api.generate_openapi
 ```
 This imports the FastAPI app object and writes the current schema to interfaces/openapi.json.
 
-## MongoDB Connection
-The application uses Motor (AsyncIOMotorClient). On startup:
-- If MONGO_URI is provided, the shared client is initialized.
-- If MONGO_PING_ON_STARTUP is true, the app attempts a ping to validate connectivity.
-- If MongoDB is unavailable, errors are logged but the app continues to run.
+## Data Model
+The service uses a generic items table in Postgres with:
+- id: UUID primary key (generated server-side)
+- data: JSONB payload
+- created_at / updated_at: timestamps
 
-Basic example values:
-```
-MONGO_URI=mongodb://localhost:27017
-MONGO_DB_NAME=exampledb
-MONGO_COLLECTION=items
-```
-
-Connection examples in code (see src/db/mongo.py):
-- Connect on startup:
-  - The app calls connect_client(ping=bool(MONGO_PING_ON_STARTUP))
-- Access default collection:
-  - get_collection() uses MONGO_DB_NAME and MONGO_COLLECTION
+The /data endpoints perform CRUD against this table, supporting simple filtering on data.* keys, sorting, pagination, and optional projection of returned data fields.
 
 ## Example Requests
 
@@ -203,7 +183,7 @@ Connection examples in code (see src/db/mongo.py):
   ```
 
 ### Data CRUD (/data)
-These routes expect a configured MongoDB and collection.
+These routes operate against the SQL items table.
 
 - Create:
   ```
@@ -214,16 +194,16 @@ These routes expect a configured MongoDB and collection.
 
 - Get by id:
   ```
-  curl -s http://localhost:3001/data/<id>
+  curl -s http://localhost:3001/data/<uuid>
   ```
 
 - List (filter, projection, sorting, paging):
   ```
-  # Filter: data.country == "US"; fields: data.name,data.age; sort by age desc; limit 10; offset 0
+  # Filter: data.country == "US"; fields: data.name,data.age; sort by created_at desc; limit 10; offset 0
   curl -G -s http://localhost:3001/data \
     --data-urlencode 'filter={"data.country":"US"}' \
     --data-urlencode 'fields=data.name,data.age' \
-    --data-urlencode 'sort_by=data.age' \
+    --data-urlencode 'sort_by=created_at' \
     --data-urlencode 'sort_dir=desc' \
     --data-urlencode 'limit=10' \
     --data-urlencode 'offset=0'
@@ -231,26 +211,19 @@ These routes expect a configured MongoDB and collection.
 
 - Update:
   ```
-  curl -s -X PUT http://localhost:3001/data/<id> \
+  curl -s -X PUT http://localhost:3001/data/<uuid> \
     -H "Content-Type: application/json" \
     -d '{"data":{"name":"Alice","age":31}}'
   ```
 
 - Delete:
   ```
-  curl -s -X DELETE -i http://localhost:3001/data/<id>
+  curl -s -X DELETE -i http://localhost:3001/data/<uuid>
   ```
 
 ### NLQ (/nlq/query)
-NLQ parsing is rule-based and deterministic. It supports simple phrases like:
-- today, yesterday, last 7 days/weeks/months
-- field equals X, field is X
-- field > N, field >= N, field < N, field <= N
-- category: Retail, category in A,B,C
-- field contains text
-- sort by field [asc|desc]
-- top N, limit N, offset N
-- fields a,b,c or select a,b,c
+NLQ parsing is rule-based and deterministic (e.g., "last 7 days", "field equals X", "sort by field desc", "top N").
+It produces filters compatible with the SQL JSONB query layer.
 
 Request:
 ```
@@ -265,7 +238,6 @@ curl -s -X POST http://localhost:3001/nlq/query \
   -H "Content-Type: application/json" \
   -d '{
         "query": "last 7 days sort by created_at desc",
-        "collection": "orders",
         "params": {"limit": 20, "offset": 0, "sort_by": "created_at", "sort_dir": "desc", "fields":["_id","created_at","total"]}
       }'
 ```
@@ -274,18 +246,17 @@ Response (schema):
 ```
 {
   "nlq": "<original query>",
-  "filter": { ... parsed MongoDB-style filter ... },
-  "items": [ { "_id": "...", ... }, ... ],
+  "filter": { ... parsed filter ... },
+  "items": [ { "_id": "<uuid>", ... }, ... ],
   "meta": { "total": 100, "limit": 20, "offset": 0 }
 }
 ```
 
 Note: If ENABLE_NLQ=false, the endpoint returns 404.
 
-## Supabase Integration
+## Supabase Integration (optional)
 - Controlled by ENABLE_SUPABASE.
 - When enabled, the system attempts to initialize a Supabase client using SUPABASE_URL and SUPABASE_ANON_KEY.
-- The /health endpoint logs a minimal Supabase health summary.
 - New route: POST /supabase/query to query a specified table with optional filters (body), ordering, limit, and offset.
 
 ### Example usage
@@ -325,16 +296,11 @@ CORS is configured via the CORS_ALLOWED_ORIGINS environment variable. Provide a 
 ## Logging
 Logs are emitted in a lightweight JSON-like structure to stdout with fields for timestamp, level, logger name, message, and context. Configure verbosity using LOG_LEVEL.
 
-## Troubleshooting
-- 503 Database not available: Ensure MONGO_URI, MONGO_DB_NAME, and MONGO_COLLECTION are correctly set and MongoDB is reachable.
-- Invalid ObjectId: Confirm the id string is a 24-character hex value.
-- NLQ returns few/no results: The NLQ parser is rule-based; refine the query or use explicit parameters with /data.
-- CORS blocked in browser: Confirm CORS_ALLOWED_ORIGINS includes your frontend origin or "*" for permissive setups.
-
 ## Project Layout
 - src/api/main.py: FastAPI app initialization and routing
-- src/routers: Route modules (/health, /data, /nlq)
-- src/db/mongo.py: Async MongoDB client management and helpers
+- src/routers: Route modules (/health, /data, /nlq, /supabase)
+- src/db/sqlalchemy.py: SQLAlchemy engine/session/Base and FastAPI dependency
+- src/models/sql_models.py: SQLAlchemy ORM models (items)
 - src/models/schemas.py: Pydantic schemas for requests and responses
 - src/services/nlq_service.py: Deterministic NLQ parsing
 - src/services/supabase_client.py: Optional Supabase wrapper

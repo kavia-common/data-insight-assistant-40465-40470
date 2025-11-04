@@ -8,7 +8,9 @@ from ..routers.health import router as health_router
 from ..routers.data import router as data_router
 from ..routers.nlq import router as nlq_router
 from ..routers.supabase import router as supabase_router
-from ..db.mongo import connect_client, close_client  # lifecycle hooks
+from ..db.sqlalchemy import engine
+from ..models import __init__ as _models_init  # noqa: F401
+from ..models.sql_models import Item  # ensure model import so metadata includes it
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -16,8 +18,8 @@ logger = get_logger(__name__)
 # Initialize FastAPI application with metadata and orjson for performance
 app = FastAPI(
     title=settings.APP_NAME,
-    description="REST API backend for data retrieval via NLQ with MongoDB integration.",
-    version="0.1.0",
+    description="REST API backend for data retrieval via NLQ with SQLAlchemy (Supabase Postgres).",
+    version="0.2.0",
     default_response_class=ORJSONResponse,
     openapi_tags=[
         {"name": "Health", "description": "Service health and diagnostics"},
@@ -44,20 +46,28 @@ logger.info("FastAPI app initialized", extra={"app_name": settings.APP_NAME, "en
 async def startup_event():
     """FastAPI startup hook.
 
-    Connects to MongoDB when MONGO_URI is configured. Performs an optional 'ping'
-    check to validate connectivity based on settings.MONGO_PING_ON_STARTUP. Startup
-    continues even if ping fails to avoid hard dependency during environments without DB access.
+    Ensures database connectivity by attempting a simple connection and creating tables if needed.
     """
-    await connect_client(ping=bool(settings.MONGO_PING_ON_STARTUP))
+    try:
+        # Create tables if not present. This is safe in most environments and idempotent.
+        from ..db.sqlalchemy import Base  # local import to ensure Base is bound
+        Base.metadata.create_all(bind=engine)
+        # Open a quick connection to validate
+        with engine.connect() as conn:
+            conn.execute("SELECT 1")
+        logger.info("Database connectivity verified on startup.")
+    except Exception as exc:
+        logger.error("Database connectivity check failed on startup.", exc_info=exc)
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """FastAPI shutdown hook.
-
-    Closes the MongoDB client gracefully if it was initialized.
-    """
-    await close_client()
+    """FastAPI shutdown hook."""
+    try:
+        engine.dispose()
+        logger.info("SQLAlchemy engine disposed.")
+    except Exception as exc:
+        logger.error("Error disposing SQLAlchemy engine.", exc_info=exc)
 
 
 # Root health remains available (back-compat)

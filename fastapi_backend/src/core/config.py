@@ -29,13 +29,10 @@ class Settings(BaseSettings):
     PORT: int = Field(default=3001, description="Port for the FastAPI server")
     CORS_ALLOWED_ORIGINS: str = Field(default="*", description="Comma-separated list of allowed CORS origins or '*'")
 
-    # Database
-    MONGO_URI: Optional[str] = Field(default=None, description="MongoDB connection URI")
-    MONGO_DB_NAME: Optional[str] = Field(default=None, description="MongoDB database name")
-    MONGO_COLLECTION: Optional[str] = Field(default=None, description="Default MongoDB collection name")
-    MONGO_PING_ON_STARTUP: bool = Field(
-        default=True,
-        description="When true, perform a MongoDB ping during app startup to verify connectivity.",
+    # Database (SQLAlchemy / Supabase Postgres)
+    SUPABASE_DB_CONNECTION_STRING: Optional[str] = Field(
+        default=None,
+        description="Postgres connection string for SQLAlchemy (e.g., postgresql://user:pass@host:5432/db)",
     )
 
     # Feature flags
