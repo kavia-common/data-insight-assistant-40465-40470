@@ -34,15 +34,18 @@ _SessionLocal: Optional[sessionmaker] = None
 
 def _get_db_url() -> str:
     """
-    Resolve database URL from environment variable SUPABASE_DB_CONNECTION_STRING.
+    Resolve database URL from environment variables.
+    Priority:
+      1) DATABASE_URL
+      2) SUPABASE_DB_CONNECTION_STRING (deprecated)
     Raises ValueError if missing to make failures explicit at first DB access (not import).
     """
     settings = get_settings()
-    url = getattr(settings, "SUPABASE_DB_CONNECTION_STRING", None)
+    url = (settings.DATABASE_URL or "").strip() or (settings.SUPABASE_DB_CONNECTION_STRING or "").strip()
     if not url:
         raise ValueError(
-            "SUPABASE_DB_CONNECTION_STRING is not set. "
-            "Provide a valid Postgres connection string in .env."
+            "DATABASE_URL is not set. Provide a valid Postgres connection string in .env "
+            "(e.g., postgresql+psycopg2://user:pass@host:5432/db)."
         )
     return url
 
@@ -55,11 +58,12 @@ def _ensure_engine_initialized() -> None:
     global _engine, _SessionLocal
     if _engine is not None and _SessionLocal is not None:
         return
+    settings = get_settings()
     db_url = _get_db_url()
-    # For Supabase Postgres, psycopg2 is suitable; autocommit off, future engine.
-    _engine = create_engine(db_url, pool_pre_ping=True, future=True)
+    # For Postgres, psycopg2 driver is used in sync mode.
+    _engine = create_engine(db_url, pool_pre_ping=True, future=True, echo=bool(settings.DB_ECHO))
     _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False, class_=Session, future=True)
-    logger.info("SQLAlchemy engine initialized.")
+    logger.info("SQLAlchemy engine initialized.", extra={"echo": bool(settings.DB_ECHO)})
 
 
 # PUBLIC_INTERFACE

@@ -29,10 +29,16 @@ class Settings(BaseSettings):
     PORT: int = Field(default=3001, description="Port for the FastAPI server")
     CORS_ALLOWED_ORIGINS: str = Field(default="*", description="Comma-separated list of allowed CORS origins or '*'")
 
-    # Database (SQLAlchemy / Supabase Postgres)
+    # Database (SQLAlchemy / PostgreSQL)
+    DATABASE_URL: Optional[str] = Field(
+        default=None,
+        description="Primary SQLAlchemy connection string for Postgres (e.g., postgresql+psycopg2://user:pass@host:5432/db)",
+    )
+    DB_ECHO: bool = Field(default=False, description="If true, SQLAlchemy will echo SQL statements to logs")
+    # Back-compat: Falls back to this if DATABASE_URL is not set
     SUPABASE_DB_CONNECTION_STRING: Optional[str] = Field(
         default=None,
-        description="Postgres connection string for SQLAlchemy (e.g., postgresql://user:pass@host:5432/db)",
+        description="Legacy Postgres connection string (deprecated; prefer DATABASE_URL)",
     )
 
     # Feature flags

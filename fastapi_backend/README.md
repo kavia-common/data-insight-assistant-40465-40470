@@ -43,7 +43,10 @@ cp .env.example .env
 ```
 
 Required database variable:
-- SUPABASE_DB_CONNECTION_STRING: Postgres connection string for SQLAlchemy (e.g., postgresql://user:pass@host:5432/postgres)
+- DATABASE_URL: Postgres connection string for SQLAlchemy (e.g., postgresql+psycopg2://user:pass@host:5432/postgres)
+
+Backward-compatibility:
+- If DATABASE_URL is not set, the application will fall back to SUPABASE_DB_CONNECTION_STRING (deprecated).
 
 ### Supported Environment Variables
 - APP_NAME: Application name for OpenAPI metadata

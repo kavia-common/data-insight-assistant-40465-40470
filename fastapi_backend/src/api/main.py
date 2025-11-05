@@ -51,11 +51,12 @@ async def startup_event():
     try:
         # Create tables if not present. This is safe in most environments and idempotent.
         from ..db.sqlalchemy import Base  # local import to ensure Base is bound
+        from sqlalchemy import text as _sql_text
         engine = get_engine()
         Base.metadata.create_all(bind=engine)
         # Open a quick connection to validate
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(_sql_text("SELECT 1"))
         logger.info("Database connectivity verified on startup.")
     except Exception as exc:
         logger.error("Database connectivity check failed on startup.", exc_info=exc)
