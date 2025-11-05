@@ -28,7 +28,11 @@ def _apply_filter(stmt, filter_obj: Optional[Dict[str, Any]]):
         if k.startswith("data."):
             path = k.split(".", 1)[1]
             # Use ->> for text extraction; cast as needed by PG
-            stmt = stmt.where(text(f"(items.data ->> :f_{path.replace('.', '_')}) = :v_{path.replace('.', '_')}")).params(**{f"f_{path.replace('.', '_')}": path, f"v_{path.replace('.', '_')}": str(v)})
+            stmt = stmt.where(
+                text(
+                    f"(items.data ->> :f_{path.replace('.', '_')}) = :v_{path.replace('.', '_')}"
+                )
+            ).params(**{f"f_{path.replace('.', '_')}": path, f"v_{path.replace('.', '_')}": str(v)})
         elif k == "id":
             try:
                 _ = UUID(str(v))
@@ -50,7 +54,9 @@ def _apply_sort(stmt, sort_by: Optional[str], sort_dir: Optional[str]):
         return stmt.order_by(Item.updated_at.desc() if direction_desc else Item.updated_at.asc())
     if sort_by.startswith("data."):
         path = sort_by.split(".", 1)[1]
-        order_expr = text(f"(items.data ->> :s_{path.replace('.', '_')}) {'DESC' if direction_desc else 'ASC'}")
+        order_expr = text(
+            f"(items.data ->> :s_{path.replace('.', '_')}) {'DESC' if direction_desc else 'ASC'}"
+        )
         return stmt.order_by(order_expr).params(**{f"s_{path.replace('.', '_')}": path})
     # default to id
     return stmt.order_by(Item.id.desc() if direction_desc else Item.id.asc())
@@ -73,6 +79,7 @@ def _project_item(it: Item, fields: Optional[str]) -> Dict[str, Any]:
 
 
 # PUBLIC_INTERFACE
+
 
 @router.get(
     "",
@@ -125,7 +132,9 @@ def list_data(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Database error: {exc}")
 
+
 # PUBLIC_INTERFACE
+
 
 @router.get(
     "/{item_id}",
@@ -149,7 +158,10 @@ def get_data_item(item_id: str, db: Session = Depends(get_db)) -> DataItemOut:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Database error: {exc}")
 
+
 # PUBLIC_INTERFACE
+
+
 @router.post(
     "",
     response_model=DataItemOut,
@@ -169,7 +181,10 @@ def create_data_item(payload: DataItemIn, db: Session = Depends(get_db)) -> Data
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {exc}")
 
+
 # PUBLIC_INTERFACE
+
+
 @router.put(
     "/{item_id}",
     response_model=DataItemOut,
@@ -196,7 +211,9 @@ def update_data_item(item_id: str, payload: DataItemIn, db: Session = Depends(ge
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {exc}")
 
+
 # PUBLIC_INTERFACE
+
 
 @router.delete(
     "/{item_id}",

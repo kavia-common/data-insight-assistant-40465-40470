@@ -8,7 +8,7 @@ from ..routers.health import router as health_router
 from ..routers.data import router as data_router
 from ..routers.nlq import router as nlq_router
 from ..routers.supabase import router as supabase_router
-from ..db.sqlalchemy import engine
+from ..db.sqlalchemy import get_engine
 from ..models import __init__ as _models_init  # noqa: F401
 from ..models.sql_models import Item  # ensure model import so metadata includes it
 
@@ -51,6 +51,7 @@ async def startup_event():
     try:
         # Create tables if not present. This is safe in most environments and idempotent.
         from ..db.sqlalchemy import Base  # local import to ensure Base is bound
+        engine = get_engine()
         Base.metadata.create_all(bind=engine)
         # Open a quick connection to validate
         with engine.connect() as conn:
@@ -64,6 +65,7 @@ async def startup_event():
 async def shutdown_event():
     """FastAPI shutdown hook."""
     try:
+        engine = get_engine()
         engine.dispose()
         logger.info("SQLAlchemy engine disposed.")
     except Exception as exc:
