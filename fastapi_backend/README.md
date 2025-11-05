@@ -52,7 +52,8 @@ Alternative configuration (discrete variables):
   host=<db host>
   port=<db port>
   dbname=<db name>
-  The application will automatically construct a SQLAlchemy URL and enforce sslmode=require.
+  The application will automatically construct a SQLAlchemy URL using the psycopg2 driver and enforce sslmode=require.
+  For ephemeral preview environments where pooled connections may linger, set DISABLE_DB_POOL=true to use NullPool.
 
 Backward-compatibility:
 - If DATABASE_URL is not set, the application will fall back to SUPABASE_DB_CONNECTION_STRING (deprecated).

@@ -13,12 +13,13 @@ Design:
   that initialize on first use.
 """
 
-from typing import Generator, Optional
+from typing import Generator, Optional, Dict, Any
 import os
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from ..core.config import get_settings
 from ..core.logger import get_logger
@@ -63,6 +64,15 @@ def _append_sslmode_require(url: str) -> str:
     return url + ("&sslmode=require" if "?" in url else "?sslmode=require")
 
 
+def _ensure_psycopg2_scheme(url: str) -> str:
+    """
+    Ensure the SQLAlchemy URL uses the psycopg2 driver explicitly.
+    """
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
+
+
 def _get_db_url() -> str:
     """
     Resolve database URL from environment variables.
@@ -75,10 +85,12 @@ def _get_db_url() -> str:
     settings = get_settings()
     url = (settings.DATABASE_URL or "").strip()
     if url:
+        url = _ensure_psycopg2_scheme(url)
         return _append_sslmode_require(url)
 
     legacy = (settings.SUPABASE_DB_CONNECTION_STRING or "").strip()
     if legacy:
+        legacy = _ensure_psycopg2_scheme(legacy)
         return _append_sslmode_require(legacy)
 
     # Fallback to discrete environment variables
@@ -93,6 +105,32 @@ def _get_db_url() -> str:
     )
 
 
+def _effective_db_params(url: str) -> Dict[str, Any]:
+    """
+    Parse and return effective DB connection params for logging without password.
+    Keeps driver scheme and host:port/db details to assist diagnostics.
+    """
+    # Naive parse sufficient for logging purposes without new deps:
+    redacted = url
+    if "@" in url and "://" in url:
+        scheme, rest = url.split("://", 1)
+        if ":" in rest and "@" in rest:
+            creds, hostpart = rest.split("@", 1)
+            # Redact password if present in creds
+            if ":" in creds:
+                user = creds.split(":", 1)[0]
+                redacted = f"{scheme}://{user}:****@{hostpart}"
+            else:
+                redacted = f"{scheme}://****@{hostpart}"
+        else:
+            redacted = f"{scheme}://<no-credentials>"
+    return {
+        "url_redacted": redacted,
+        "driver": "psycopg2" if "psycopg2" in url else "unknown",
+        "sslmode_present": ("sslmode=" in url),
+    }
+
+
 def _ensure_engine_initialized() -> None:
     """
     Initialize the SQLAlchemy engine and session factory if not already done.
@@ -103,10 +141,25 @@ def _ensure_engine_initialized() -> None:
         return
     settings = get_settings()
     db_url = _get_db_url()
-    # For Postgres, psycopg2 driver is used in sync mode.
-    _engine = create_engine(db_url, pool_pre_ping=True, future=True, echo=bool(settings.DB_ECHO))
+
+    # Allow disabling pooling in ephemeral preview environments to avoid stale connections.
+    use_null_pool = bool(os.getenv("DISABLE_DB_POOL", "").lower() in ("1", "true", "yes"))
+    engine_kwargs = {
+        "pool_pre_ping": True,
+        "future": True,
+        "echo": bool(settings.DB_ECHO),
+    }
+    if use_null_pool:
+        engine_kwargs["poolclass"] = NullPool  # type: ignore[assignment]
+
+    _engine = create_engine(db_url, **engine_kwargs)
     _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False, class_=Session, future=True)
-    logger.info("SQLAlchemy engine initialized.", extra={"echo": bool(settings.DB_ECHO), "url_driver": "psycopg2"})
+
+    eff = _effective_db_params(db_url)
+    logger.info(
+        "SQLAlchemy engine initialized.",
+        extra={"echo": bool(settings.DB_ECHO), "pool": ("NullPool" if use_null_pool else "Default"), **eff},
+    )
 
 
 # PUBLIC_INTERFACE
