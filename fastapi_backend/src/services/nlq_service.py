@@ -5,6 +5,9 @@ Provides a simple, rule-based mapping from natural language phrases to MongoDB-s
 filters and query options. This is intentionally deterministic for predictable behavior
 and testability without AI dependencies.
 
+Note:
+- This module has no runtime dependency on MongoDB client packages and must remain import-safe.
+
 Supported patterns (case-insensitive, order-insensitive):
 - Date ranges:
   * "last N days|weeks|months" -> created_at in ISODate range

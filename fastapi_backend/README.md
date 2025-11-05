@@ -118,8 +118,10 @@ Notes:
 
 ### Health readiness
 A lightweight health endpoint exists:
-- GET /health -> {"status":"ok"} (executes SELECT 1 against the database)
 - GET / -> {"message":"Healthy"}  (root alias)
+- GET /health -> {"status":"ok"} (executes SELECT 1 against the database using a request-scoped session)
+- GET /health/db -> {"status":"ok"} (executes SELECT 1 via the engine to confirm connectivity)
+
 For readiness checks, probe:
 ```
 curl -sf http://localhost:3001/health >/dev/null

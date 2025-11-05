@@ -1,12 +1,12 @@
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from ..core.config import get_settings
 from ..core.logger import get_logger
-from ..db.sqlalchemy import get_db
+from ..db.sqlalchemy import get_db, get_engine
 from ..models.schemas import HealthResponse
 from ..services.supabase_client import supabase_health
 
@@ -16,7 +16,7 @@ _logger = get_logger(__name__)
 
 
 def _db_ping(db: Session) -> Dict[str, Any]:
-    """Perform a lightweight DB ping using SELECT 1."""
+    """Perform a lightweight DB ping using SELECT 1 (session)."""
     try:
         db.execute(text("SELECT 1"))
         return {"available": True}
@@ -71,3 +71,24 @@ def get_health(db: Session = Depends(get_db)) -> HealthResponse:
 def get_healthz(db: Session = Depends(get_db)) -> HealthResponse:
     """Alias of /health that returns the same response payload."""
     return get_health(db)
+
+
+# PUBLIC_INTERFACE
+@router.get(
+    "/db",
+    response_model=HealthResponse,
+    summary="Database connectivity",
+    description="Runs a simple SELECT 1 via the SQLAlchemy engine to confirm DB connectivity.",
+    responses={200: {"description": "Database reachable"}, 503: {"description": "Database unavailable"}},
+)
+def health_db() -> HealthResponse:
+    """Check direct database connectivity via engine.connect()."""
+    try:
+        engine = get_engine()  # lazy init, may raise if URL missing
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return HealthResponse(status="ok")
+    except Exception as exc:
+        _logger.error("Database connectivity check failed in /health/db.", exc_info=exc)
+        # 503 to signal dependency unavailable
+        raise HTTPException(status_code=503, detail="database_unavailable")

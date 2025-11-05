@@ -1,13 +1,13 @@
 """
-SQLAlchemy database initialization for Supabase Postgres.
+SQLAlchemy database initialization for Postgres (Supabase-compatible).
 
 Creates (lazily):
-- engine: SQLAlchemy engine using SUPABASE_DB_CONNECTION_STRING
+- engine: SQLAlchemy engine using DATABASE_URL (preferred) or SUPABASE_DB_CONNECTION_STRING (deprecated)
 - SessionLocal: session factory for per-request DB sessions
 - Base: Declarative base for ORM models
 - get_db: FastAPI dependency to provide a session and ensure cleanup
 
-Design change:
+Design:
 - Avoid creating the engine at import time to prevent uvicorn import failures
   when environment variables are not yet present. Instead, provide getters
   that initialize on first use.
