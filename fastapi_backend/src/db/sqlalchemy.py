@@ -14,6 +14,7 @@ Design:
 """
 
 from typing import Generator, Optional
+import os
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -32,22 +33,64 @@ _engine: Optional[Engine] = None
 _SessionLocal: Optional[sessionmaker] = None
 
 
+def _build_url_from_discrete_env() -> Optional[str]:
+    """
+    Build a Postgres SQLAlchemy URL from discrete env vars expected by some deployments:
+      user, password, host, port, dbname
+    Enforces sslmode=require.
+    Returns None if any required field is missing.
+    """
+    user = os.getenv("user")
+    password = os.getenv("password")
+    host = os.getenv("host")
+    port = os.getenv("port")
+    dbname = os.getenv("dbname")
+    if not all([user, password, host, port, dbname]):
+        return None
+    return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}?sslmode=require"
+
+
+def _append_sslmode_require(url: str) -> str:
+    """
+    Ensure sslmode=require is present in the connection string for psycopg2 URLs.
+    If a query string already exists, append with &; otherwise, add ?sslmode=require.
+    """
+    if "postgresql+psycopg2://" not in url:
+        return url
+    # If any sslmode is already present, do not duplicate; prefer require if not set.
+    if "sslmode=" in url:
+        return url
+    return url + ("&sslmode=require" if "?" in url else "?sslmode=require")
+
+
 def _get_db_url() -> str:
     """
     Resolve database URL from environment variables.
     Priority:
-      1) DATABASE_URL
-      2) SUPABASE_DB_CONNECTION_STRING (deprecated)
+      1) DATABASE_URL (append sslmode=require if missing)
+      2) SUPABASE_DB_CONNECTION_STRING (deprecated; append sslmode=require if missing)
+      3) Discrete vars: user/password/host/port/dbname (compose with sslmode=require)
     Raises ValueError if missing to make failures explicit at first DB access (not import).
     """
     settings = get_settings()
-    url = (settings.DATABASE_URL or "").strip() or (settings.SUPABASE_DB_CONNECTION_STRING or "").strip()
-    if not url:
-        raise ValueError(
-            "DATABASE_URL is not set. Provide a valid Postgres connection string in .env "
-            "(e.g., postgresql+psycopg2://user:pass@host:5432/db)."
-        )
-    return url
+    url = (settings.DATABASE_URL or "").strip()
+    if url:
+        return _append_sslmode_require(url)
+
+    legacy = (settings.SUPABASE_DB_CONNECTION_STRING or "").strip()
+    if legacy:
+        return _append_sslmode_require(legacy)
+
+    # Fallback to discrete environment variables
+    composed = _build_url_from_discrete_env()
+    if composed:
+        return composed
+
+    raise ValueError(
+        "Database configuration not found. Provide one of: "
+        "DATABASE_URL, SUPABASE_DB_CONNECTION_STRING, or discrete env vars "
+        "(user, password, host, port, dbname)."
+    )
 
 
 def _ensure_engine_initialized() -> None:
@@ -63,7 +106,7 @@ def _ensure_engine_initialized() -> None:
     # For Postgres, psycopg2 driver is used in sync mode.
     _engine = create_engine(db_url, pool_pre_ping=True, future=True, echo=bool(settings.DB_ECHO))
     _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False, class_=Session, future=True)
-    logger.info("SQLAlchemy engine initialized.", extra={"echo": bool(settings.DB_ECHO)})
+    logger.info("SQLAlchemy engine initialized.", extra={"echo": bool(settings.DB_ECHO), "url_driver": "psycopg2"})
 
 
 # PUBLIC_INTERFACE

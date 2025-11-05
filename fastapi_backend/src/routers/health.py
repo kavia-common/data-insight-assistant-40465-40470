@@ -89,6 +89,15 @@ def health_db() -> HealthResponse:
             conn.execute(text("SELECT 1"))
         return HealthResponse(status="ok")
     except Exception as exc:
-        _logger.error("Database connectivity check failed in /health/db.", exc_info=exc)
+        # Provide richer diagnostics in logs while keeping response minimal
+        settings = get_settings()
+        _logger.error(
+            "Database connectivity check failed in /health/db.",
+            exc_info=exc,
+            extra={
+                "has_DATABASE_URL": bool((settings.DATABASE_URL or "").strip()),
+                "has_SUPABASE_DB_CONNECTION_STRING": bool((settings.SUPABASE_DB_CONNECTION_STRING or "").strip()),
+            },
+        )
         # 503 to signal dependency unavailable
         raise HTTPException(status_code=503, detail="database_unavailable")

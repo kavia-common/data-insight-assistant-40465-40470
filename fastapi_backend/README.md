@@ -45,8 +45,18 @@ cp .env.example .env
 Required database variable:
 - DATABASE_URL: Postgres connection string for SQLAlchemy (e.g., postgresql+psycopg2://user:pass@host:5432/postgres)
 
+Alternative configuration (discrete variables):
+- If your environment provides discrete credentials, set ALL of the following keys in .env:
+  user=<db user>
+  password=<db password>
+  host=<db host>
+  port=<db port>
+  dbname=<db name>
+  The application will automatically construct a SQLAlchemy URL and enforce sslmode=require.
+
 Backward-compatibility:
 - If DATABASE_URL is not set, the application will fall back to SUPABASE_DB_CONNECTION_STRING (deprecated).
+- For either DATABASE_URL or SUPABASE_DB_CONNECTION_STRING, if sslmode is not present, the app will append sslmode=require automatically for psycopg2 URLs.
 
 ### Supported Environment Variables
 - APP_NAME: Application name for OpenAPI metadata
