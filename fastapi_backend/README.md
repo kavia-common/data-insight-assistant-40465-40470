@@ -128,10 +128,11 @@ Notes:
   port: 3001
 
 ### Health readiness
-A lightweight health endpoint exists:
+Health and diagnostics endpoints:
 - GET / -> {"message":"Healthy"}  (root alias)
-- GET /health -> {"status":"ok"} (executes SELECT 1 against the database using a request-scoped session)
-- GET /health/db -> {"status":"ok"} (executes SELECT 1 via the engine to confirm connectivity)
+- GET /health -> {"status":"ok"} (strictly no-DB; never imports or initializes DB)
+- GET /health/healthz -> {"status":"ok"} (alias; strictly no-DB)
+- GET /health/db -> {"status":"ok"} (the only endpoint that attempts DB connectivity via SELECT 1)
 
 For readiness checks, probe:
 ```

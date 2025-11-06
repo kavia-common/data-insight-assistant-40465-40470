@@ -5,7 +5,7 @@ Utility script to validate FastAPI backend readiness.
 - Verifies requirements are importable (uvicorn, fastapi)
 - Verifies 'src.api.main:app' can be imported
 - Starts a temporary uvicorn server on 0.0.0.0:3001 (or PORT env) in-process
-- Probes GET /health and exits 0 on success, non-zero otherwise
+- Probes GET /health (no-DB) and exits 0 on success, non-zero otherwise
 
 This script is intended for local/CI diagnostics.
 """

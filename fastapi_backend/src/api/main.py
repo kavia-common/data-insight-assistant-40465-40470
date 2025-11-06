@@ -12,8 +12,8 @@ from ..routers.debug import router as debug_router
 
 # Important: avoid creating DB connections at import time.
 # We only import lightweight helpers here; actual engine/session are created lazily within routes/startup.
-from ..db.sqlalchemy import get_engine  # lazy accessor (no connection on import)  # noqa: F401
-from ..models.sql_models import Item  # ensure model class is imported so metadata is registered  # noqa: F401
+# Intentionally avoid importing DB accessors or ORM models here to prevent any
+# accidental side effects or metadata bindings that could lead to implicit DB access.
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -49,43 +49,22 @@ logger.info("FastAPI app initialized", extra={"app_name": settings.APP_NAME, "en
 async def startup_event():
     """FastAPI startup hook.
 
-    Ensures database tables exist by creating them if needed. Uses lazy engine access to avoid
-    import-time connections. If a Mongo-dependent router exists, guard its registration gracefully.
+    Strictly no-DB: Do not import or initialize the database here. This ensures that endpoints
+    like /health and /debug/config never trigger lazy connections through import chains or startup hooks.
+    Any schema creation and connectivity validation must be performed explicitly by /health/db or
+    operational migrations outside the app.
     """
-    # Lazily create engine and create tables; connectivity will be validated by /health/db
-    try:
-        from ..db.sqlalchemy import Base  # local import binds metadata
-        from sqlalchemy import text as _sql_text
-        from ..db.sqlalchemy import get_engine as _lazy_engine
-
-        engine = _lazy_engine()
-        Base.metadata.create_all(bind=engine)
-        # Optional lightweight probe without failing startup: swallow errors to allow app to boot
-        try:
-            with engine.connect() as conn:
-                conn.execute(_sql_text("SELECT 1"))
-            logger.info("Database connectivity verified on startup.")
-        except Exception as ping_exc:
-            logger.warning("Database ping failed on startup; service will still start.", exc_info=ping_exc)
-    except Exception as exc:
-        logger.error("Database initialization failed on startup; continuing without DB.", exc_info=exc)
-
-    # Example guard for any hypothetical Mongo-only routers (none currently strictly depend on Mongo).
-    # If you add Mongo routers in the future, wrap include_router in try/except here.
+    logger.info("Startup complete (no-DB mode).")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """FastAPI shutdown hook."""
-    try:
-        from ..db.sqlalchemy import get_engine as _lazy_engine
+    """FastAPI shutdown hook.
 
-        engine = _lazy_engine()
-        engine.dispose()
-        logger.info("SQLAlchemy engine disposed.")
-    except Exception as exc:
-        # Do not fail shutdown
-        logger.warning("Error disposing SQLAlchemy engine.", exc_info=exc)
+    Strictly no-DB: do not import DB or dispose engine here to avoid initializing it on shutdown.
+    Connection pools will be cleaned up by process termination.
+    """
+    logger.info("Shutdown complete (no-DB mode).")
 
 
 # Root health remains available (back-compat)
