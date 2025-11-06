@@ -131,6 +131,17 @@ def _effective_db_params(url: str) -> Dict[str, Any]:
     }
 
 
+# PUBLIC_INTERFACE
+def get_effective_db_params() -> Dict[str, Any]:
+    """Return redacted effective DB parameters for diagnostics without exposing secrets."""
+    try:
+        url = _get_db_url()
+        return _effective_db_params(url)
+    except Exception as exc:
+        # If URL resolution fails (e.g., not configured), return a structured hint
+        return {"url_redacted": "<unconfigured>", "driver": "unknown", "sslmode_present": False, "error": str(exc)}
+
+
 def _ensure_engine_initialized() -> None:
     """
     Initialize the SQLAlchemy engine and session factory if not already done.

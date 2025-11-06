@@ -1,12 +1,11 @@
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import text
 
 from ..core.config import get_settings
 from ..core.logger import get_logger
-from ..db.sqlalchemy import get_db, get_engine
+from ..db.sqlalchemy import get_engine, get_effective_db_params
 from ..models.schemas import HealthResponse
 from ..services.supabase_client import supabase_health
 
@@ -15,13 +14,15 @@ router = APIRouter(prefix="/health", tags=["Health"])
 _logger = get_logger(__name__)
 
 
-def _db_ping(db: Session) -> Dict[str, Any]:
-    """Perform a lightweight DB ping using SELECT 1 (session)."""
+def _db_ping_engine() -> Dict[str, Any]:
+    """Perform a lightweight DB ping using a direct engine connection, without requiring a session dependency."""
     try:
-        db.execute(text("SELECT 1"))
+        engine = get_engine()  # may raise if URL missing
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
         return {"available": True}
     except Exception as exc:
-        _logger.error("Database ping failed in /health.", exc_info=exc)
+        _logger.warning("Database ping failed in /health (non-fatal).", exc_info=exc)
         return {"available": False, "error": str(exc)}
 
 
@@ -59,15 +60,16 @@ def _effective_env_presence() -> Dict[str, Any]:
         200: {"description": "Service is healthy"},
     },
 )
-def get_health(db: Session = Depends(get_db)) -> HealthResponse:
+def get_health() -> HealthResponse:
     """
     Root health indicator used for liveness. Always returns 200 with {'status':'ok'}.
     Also logs DB and Supabase availability diagnostics.
     """
     settings = get_settings()
 
-    db_status = _db_ping(db)
+    db_status = _db_ping_engine()
     sb = supabase_health()
+    db_params = get_effective_db_params()
 
     _logger.info(
         "Health diagnostics",
@@ -76,6 +78,7 @@ def get_health(db: Session = Depends(get_db)) -> HealthResponse:
             "db": db_status,
             "supabase": sb,
             "env_presence": _effective_env_presence(),
+            "db_params": db_params,
         },
     )
 
@@ -90,9 +93,9 @@ def get_health(db: Session = Depends(get_db)) -> HealthResponse:
     description="Alias health endpoint commonly used by platforms for liveness checks.",
     responses={200: {"description": "Service is healthy"}},
 )
-def get_healthz(db: Session = Depends(get_db)) -> HealthResponse:
+def get_healthz() -> HealthResponse:
     """Alias of /health that returns the same response payload."""
-    return get_health(db)
+    return get_health()
 
 
 # PUBLIC_INTERFACE
@@ -114,7 +117,10 @@ def health_db() -> HealthResponse:
         # Attempt a direct SELECT 1
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        _logger.info("DB connectivity OK via /health/db", extra={"env_presence": _effective_env_presence()})
+        _logger.info(
+            "DB connectivity OK via /health/db",
+            extra={"env_presence": _effective_env_presence(), "db_params": get_effective_db_params()},
+        )
         return HealthResponse(status="ok")
     except Exception as exc:
         # Provide richer diagnostics in logs and return detailed error for troubleshooting
@@ -123,8 +129,12 @@ def health_db() -> HealthResponse:
             exc_info=exc,
             extra={
                 "env_presence": _effective_env_presence(),
+                "db_params": get_effective_db_params(),
                 "note": "Ensure DATABASE_URL or discrete vars are set; psycopg2 driver and sslmode=require enforced.",
             },
         )
         # 503 to signal dependency unavailable, include error string for operator visibility
-        raise HTTPException(status_code=503, detail=f"database_unavailable: {str(exc)}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"database_unavailable: {str(exc)} | effective={get_effective_db_params().get('url_redacted')}",
+        )
