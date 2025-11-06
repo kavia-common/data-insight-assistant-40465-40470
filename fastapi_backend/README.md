@@ -43,14 +43,14 @@ cp .env.example .env
 ```
 
 Required database variable:
-- DATABASE_URL: Postgres connection string for SQLAlchemy (e.g., postgresql+psycopg2://user:pass@host:5432/postgres)
+- DATABASE_URL: Postgres connection string for SQLAlchemy (e.g., postgresql+psycopg2://user:pass@host:6543/postgres)
 
 Alternative configuration (discrete variables):
 - If your environment provides discrete credentials, set ALL of the following keys in .env:
   user=<db user>
   password=<db password>
   host=<db host>
-  port=<db port>
+  port=<db port>   # Use 6543 (updated from 5432)
   dbname=<db name>
   The application will automatically construct a SQLAlchemy URL using the psycopg2 driver and enforce sslmode=require.
   For ephemeral preview environments where pooled connections may linger, set DISABLE_DB_POOL=true to use NullPool.
