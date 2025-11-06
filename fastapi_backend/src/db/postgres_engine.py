@@ -1,23 +1,17 @@
-"""Lightweight SQLAlchemy engine for Postgres using python-dotenv.
+"""Lightweight, lazy SQLAlchemy engine helper for Postgres using python-dotenv.
 
-This module reads credentials from a .env file (loaded via python-dotenv) using
-individual variables:
+This module reads discrete credentials from .env when explicitly asked to build a URL:
   - user
   - password
   - host
   - port
   - dbname
 
-It constructs a SQLAlchemy database URL using the psycopg2 driver and exposes a
-module-level engine object for optional usage in scripts.
-
-Design:
-- No import-time validation errors if environment variables are missing.
-- The engine is created from the raw values; if any are None, constructing the URL
-  could produce an invalid DSN. We therefore only raise validation errors when
-  running as a script (__main__) and attempting the connectivity test.
-- This module is not wired into the FastAPI app; it's a standalone utility and
-  should not affect app startup.
+Critical behavior:
+- NO ENGINE IS CREATED AT IMPORT TIME. This prevents accidental DB initialization
+  if this module is imported anywhere in the application.
+- Use get_engine() to construct an Engine lazily and only when needed by scripts.
+- This module is not wired into the FastAPI app; it is a standalone utility.
 
 Usage:
   python -m src.db.postgres_engine
@@ -27,53 +21,64 @@ Usage:
 from __future__ import annotations
 
 import os
-from sqlalchemy import create_engine
+from typing import Optional, Tuple
+
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy import text
 from dotenv import load_dotenv
 
 # Load environment variables from .env at import time safely (no raise if absent)
 load_dotenv()
 
-# Read discrete postgres credentials
-USER = os.getenv("user")
-PASSWORD = os.getenv("password")
-HOST = os.getenv("host")
-PORT = os.getenv("port")
-DBNAME = os.getenv("dbname")
 
-# Build the DATABASE_URL. We avoid validating here to keep imports safe.
-# sslmode=require is appended as per instruction.
-DATABASE_URL = (
-    f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
-)
+def _read_env_parts() -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """Return discrete credential parts from environment."""
+    return (
+        os.getenv("user"),
+        os.getenv("password"),
+        os.getenv("host"),
+        os.getenv("port"),
+        os.getenv("dbname"),
+    )
 
-# Create engine object. Note: If env vars are missing, the URL may be malformed,
-# but we do not attempt to connect or validate at import time.
-engine: Engine = create_engine(DATABASE_URL)
+
+def _build_url() -> str:
+    """Compose a psycopg2 SQLAlchemy URL from discrete env vars, enforcing sslmode=require."""
+    user, password, host, port, dbname = _read_env_parts()
+    if not all([user, password, host, port, dbname]):
+        raise ValueError(
+            "Missing required environment variables in .env: user, password, host, port, dbname"
+        )
+    return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}?sslmode=require"
+
+
+# PUBLIC_INTERFACE
+def get_engine() -> Engine:
+    """Return a new SQLAlchemy Engine constructed from discrete env vars (lazy)."""
+    url = _build_url()
+    return create_engine(url)
 
 
 def _validate_env() -> None:
     """Ensure required env vars exist; used only for main-time checks."""
+    user, password, host, port, dbname = _read_env_parts()
     missing = [k for k, v in {
-        "user": USER,
-        "password": PASSWORD,
-        "host": HOST,
-        "port": PORT,
-        "dbname": DBNAME,
+        "user": user,
+        "password": password,
+        "host": host,
+        "port": port,
+        "dbname": dbname,
     }.items() if not v]
     if missing:
-        raise ValueError(
-            f"Missing required environment variables in .env: {', '.join(missing)}"
-        )
+        raise ValueError(f"Missing required environment variables in .env: {', '.join(missing)}")
 
 
 if __name__ == "__main__":
     # Optional connectivity test; validate env then try a simple SELECT 1.
     try:
         _validate_env()
+        engine = get_engine()
         with engine.connect() as connection:
-            # simple ping
             connection.execute(text("SELECT 1"))
             print("Connection successful!")
     except Exception as e:

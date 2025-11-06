@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple
+import sys  # used for defensive check against unintended DB imports
 
 from fastapi import APIRouter, HTTPException, Query, Body
 from pydantic import BaseModel, Field
@@ -9,6 +10,10 @@ from ..services.supabase_client import get_supabase_client, is_supabase_enabled
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/supabase", tags=["Supabase"])
+
+# Defensive runtime check: ensure no DB modules were imported on this code path.
+if any(m for m in sys.modules.keys() if m.startswith("src.db.sqlalchemy")):
+    logger.warning("DB module detected in sys.modules within supabase router; verify no unintended DB imports.")
 
 
 # PUBLIC_INTERFACE
