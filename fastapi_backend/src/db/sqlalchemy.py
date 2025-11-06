@@ -108,13 +108,25 @@ def _get_db_url() -> str:
 def _effective_db_params(url: str) -> Dict[str, Any]:
     """
     Parse and return effective DB connection params for logging without password.
-    Keeps driver scheme and host:port/db details to assist diagnostics.
+    Returns:
+        {
+          "url_redacted": "...",
+          "driver": "psycopg2" | "unknown",
+          "sslmode_present": bool,
+          "host": "<host or None>",
+          "port": "<port or None>",
+          "database": "<dbname or None>"
+        }
     """
     # Naive parse sufficient for logging purposes without new deps:
     redacted = url
-    if "@" in url and "://" in url:
+    host = None
+    port = None
+    database = None
+    if "://" in url:
         scheme, rest = url.split("://", 1)
-        if ":" in rest and "@" in rest:
+        # Split credentials (optional) from host/db section
+        if "@" in rest:
             creds, hostpart = rest.split("@", 1)
             # Redact password if present in creds
             if ":" in creds:
@@ -123,11 +135,31 @@ def _effective_db_params(url: str) -> Dict[str, Any]:
             else:
                 redacted = f"{scheme}://****@{hostpart}"
         else:
-            redacted = f"{scheme}://<no-credentials>"
+            hostpart = rest
+            redacted = f"{scheme}://{hostpart}"
+        # hostpart format: host[:port]/database[?query]
+        host_db = hostpart
+        # Strip query string
+        if "?" in host_db:
+            host_db, _ = host_db.split("?", 1)
+        # Split host[:port] and path (/db)
+        if "/" in host_db:
+            host_port, dbpath = host_db.split("/", 1)
+            database = dbpath or None
+        else:
+            host_port = host_db
+        # Extract host and optional port
+        if ":" in host_port:
+            host, port = host_port.rsplit(":", 1)
+        else:
+            host = host_port or None
     return {
         "url_redacted": redacted,
         "driver": "psycopg2" if "psycopg2" in url else "unknown",
         "sslmode_present": ("sslmode=" in url),
+        "host": host,
+        "port": port,
+        "database": database,
     }
 
 
@@ -169,7 +201,11 @@ def _ensure_engine_initialized() -> None:
     eff = _effective_db_params(db_url)
     logger.info(
         "SQLAlchemy engine initialized.",
-        extra={"echo": bool(settings.DB_ECHO), "pool": ("NullPool" if use_null_pool else "Default"), **eff},
+        extra={
+            "echo": bool(settings.DB_ECHO),
+            "pool": ("NullPool" if use_null_pool else "Default"),
+            **eff,
+        },
     )
 
 
