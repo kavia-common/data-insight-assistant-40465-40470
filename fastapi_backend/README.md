@@ -271,12 +271,57 @@ Response (schema):
 
 Note: If ENABLE_NLQ=false, the endpoint returns 404.
 
-## Supabase Integration (optional)
-- Controlled by ENABLE_SUPABASE.
-- When enabled, the system attempts to initialize a Supabase client using SUPABASE_URL and SUPABASE_ANON_KEY.
-- New route: POST /supabase/query to query a specified table with optional filters (body), ordering, limit, and offset.
+## Supabase Integration (optional, HTTP client)
 
-### Example usage
+This backend integrates the Supabase Python client (create_client) for HTTP-based access to your Supabase project.
+The integration is feature-flagged and never attempts direct Postgres connections on port 6543 within this path.
+
+Feature flag and required env:
+- ENABLE_SUPABASE=true
+- SUPABASE_URL=<your-supabase-url>
+- SUPABASE_ANON_KEY=<your-supabase-anon-key>
+- Optional: SUPABASE_TEST_TABLE=<table-name> used by /supabase/ping if ?table is not provided
+
+Behavior:
+- The Supabase client is lazily initialized when first used.
+- If disabled or misconfigured, handlers return 404/503 without trying any DB connection.
+- This path uses only the Supabase HTTP client; no psycopg2/SQLAlchemy access is performed.
+
+### New: GET /supabase/ping
+A minimal connectivity check that performs `select('*').limit(1)` on a table.
+
+Query params:
+- table (optional): table name to check; if omitted, uses SUPABASE_TEST_TABLE from env
+
+Examples:
+```
+# With explicit table
+curl -s "http://localhost:3001/supabase/ping?table=items"
+
+# Using env fallback
+export SUPABASE_TEST_TABLE="items"
+curl -s "http://localhost:3001/supabase/ping"
+```
+
+Response:
+```
+{
+  "ok": true,
+  "table": "items",
+  "count": 1,
+  "error": null,
+  "meta": {}
+}
+```
+
+Possible error scenarios:
+- 404 if ENABLE_SUPABASE=false
+- 503 if ENABLE_SUPABASE=true but SUPABASE_URL or SUPABASE_ANON_KEY missing
+- 400 if table parameter and SUPABASE_TEST_TABLE are both empty
+
+### POST /supabase/query
+Query a specified table with optional filters (body), ordering, limit, and offset using the Supabase HTTP client.
+
 - Basic:
 ```
 curl -s -X POST "http://localhost:3001/supabase/query?table=customers&limit=5"
@@ -306,6 +351,9 @@ curl -s -X POST "http://localhost:3001/supabase/query?table=customers&limit=5" \
 Notes:
 - Supported operators: eq, neq, lt, lte, gt, gte, ilike.
 - The endpoint returns 404 if ENABLE_SUPABASE=false and 503 if credentials are missing.
+
+### Keep no-DB health/debug behavior
+- GET /health and GET /debug/config remain strictly no-DB and can be used for readiness checks even if DB is unreachable.
 
 ## CORS
 CORS is configured via the CORS_ALLOWED_ORIGINS environment variable. Provide a comma-separated list of origins or "*" to allow all. The app configures CORSMiddleware accordingly.
