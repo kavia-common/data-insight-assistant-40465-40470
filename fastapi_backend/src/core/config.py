@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: Optional[str] = Field(default=None, description="Supabase anon API key")
     OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key (optional)")
 
+    # Pydantic BaseSettings will auto-load .env from the current working dir for this module.
+    # Our resolution precedence for DB URL is implemented in src/db/sqlalchemy.py:
+    #   DATABASE_URL > SUPABASE_DB_CONNECTION_STRING > discrete vars (user/password/host/port/dbname)
+    # NOTE: Do not introduce hardcoded port defaults (e.g., 5432) in this layer to avoid masking .env values.
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Convenience helpers (non-env)

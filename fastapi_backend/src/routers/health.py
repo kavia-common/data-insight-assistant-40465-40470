@@ -109,6 +109,7 @@ def get_healthz() -> HealthResponse:
 def health_db() -> HealthResponse:
     """
     Check direct database connectivity via engine.connect().
+    Uses the same DB URL resolution logic as the rest of the app to ensure consistency.
     Logs effective connection parameters (redacted) and env presence.
     Returns detailed error text on failure to assist diagnostics.
     """
