@@ -1,29 +1,18 @@
 from typing import Any, Dict
+import os
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import text
 
 from ..core.config import get_settings
 from ..core.logger import get_logger
-from ..db.sqlalchemy import get_engine, get_effective_db_params
 from ..models.schemas import HealthResponse
-from ..services.supabase_client import supabase_health
+
+# IMPORTANT GUARD: These handlers must never touch DB modules.
+NO_DB_MODE = True
 
 router = APIRouter(prefix="/health", tags=["Health"])
 
 _logger = get_logger(__name__)
-
-
-def _db_ping_engine() -> Dict[str, Any]:
-    """Perform a lightweight DB ping using a direct engine connection, without requiring a session dependency."""
-    try:
-        engine = get_engine()  # may raise if URL missing
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        return {"available": True}
-    except Exception as exc:
-        _logger.warning("Database ping failed in /health (non-fatal).", exc_info=exc)
-        return {"available": False, "error": str(exc)}
 
 
 def _effective_env_presence() -> Dict[str, Any]:
@@ -35,13 +24,13 @@ def _effective_env_presence() -> Dict[str, Any]:
     presence = {
         "DATABASE_URL_set": bool((s.DATABASE_URL or "").strip()),
         "SUPABASE_DB_CONNECTION_STRING_set": bool((s.SUPABASE_DB_CONNECTION_STRING or "").strip()),
-        # Discrete vars are read via os.environ in db/sqlalchemy.py, but we also check here:
+        # Discrete vars presence (do not import db/sqlalchemy here)
         "discrete": {
-            "user_set": bool((__import__("os").environ.get("user") or "").strip()),
-            "password_set": bool((__import__("os").environ.get("password") or "").strip()),
-            "host_set": bool((__import__("os").environ.get("host") or "").strip()),
-            "port_set": bool((__import__("os").environ.get("port") or "").strip()),
-            "dbname_set": bool((__import__("os").environ.get("dbname") or "").strip()),
+            "user_set": bool((os.getenv("user") or "").strip()),
+            "password_set": bool((os.getenv("password") or "").strip()),
+            "host_set": bool((os.getenv("host") or "").strip()),
+            "port_set": bool((os.getenv("port") or "").strip()),
+            "dbname_set": bool((os.getenv("dbname") or "").strip()),
         },
     }
     return presence
@@ -54,7 +43,7 @@ def _effective_env_presence() -> Dict[str, Any]:
     summary="Service health",
     description=(
         "Liveness/health endpoint. Always returns 200 when the app is up. "
-        "Executes a lightweight 'SELECT 1' against the database and reports Supabase availability."
+        "No database connections are attempted here."
     ),
     responses={
         200: {"description": "Service is healthy"},
@@ -63,22 +52,17 @@ def _effective_env_presence() -> Dict[str, Any]:
 def get_health() -> HealthResponse:
     """
     Root health indicator used for liveness. Always returns 200 with {'status':'ok'}.
-    Also logs DB and Supabase availability diagnostics.
+    Strictly non-DB: does not import or touch any DB engine/session. Safe when DB is unreachable.
     """
     settings = get_settings()
 
-    db_status = _db_ping_engine()
-    sb = supabase_health()
-    db_params = get_effective_db_params()
-
+    # Only log minimal app/process/env presence. No DB queries/imports.
     _logger.info(
-        "Health diagnostics",
+        "Health (no-DB) diagnostics",
         extra={
             "env": settings.APP_ENV,
-            "db": db_status,
-            "supabase": sb,
             "env_presence": _effective_env_presence(),
-            "db_params": db_params,
+            "no_db_mode": NO_DB_MODE,
         },
     )
 
@@ -90,7 +74,7 @@ def get_health() -> HealthResponse:
     "/healthz",
     response_model=HealthResponse,
     summary="Service health (alias)",
-    description="Alias health endpoint commonly used by platforms for liveness checks.",
+    description="Alias health endpoint commonly used by platforms for liveness checks. Strictly non-DB.",
     responses={200: {"description": "Service is healthy"}},
 )
 def get_healthz() -> HealthResponse:
@@ -109,33 +93,29 @@ def get_healthz() -> HealthResponse:
 def health_db() -> HealthResponse:
     """
     Check direct database connectivity via engine.connect().
-    Uses the same DB URL resolution logic as the rest of the app to ensure consistency.
-    Logs effective connection parameters (redacted) and env presence.
-    Returns detailed error text on failure to assist diagnostics.
+    This route is the only health endpoint that may touch DB.
     """
+    # Localized imports to prevent any accidental DB initialization in module scope
+    try:
+        from sqlalchemy import text  # type: ignore
+        from ..db.sqlalchemy import get_engine, get_effective_db_params  # type: ignore
+    except Exception as exc:
+        # If SQLAlchemy or db layer is unavailable, treat as service misconfiguration
+        raise HTTPException(status_code=503, detail=f"database_unavailable: imports_failed: {exc}")
+
     try:
         engine = get_engine()  # lazy init, may raise if URL missing
-        # Attempt a direct SELECT 1
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        _logger.info(
-            "DB connectivity OK via /health/db",
-            extra={"env_presence": _effective_env_presence(), "db_params": get_effective_db_params()},
-        )
+        _logger.info("DB connectivity OK via /health/db")
         return HealthResponse(status="ok")
     except Exception as exc:
-        # Provide richer diagnostics in logs and return detailed error for troubleshooting
-        _logger.error(
-            "Database connectivity check failed in /health/db.",
-            exc_info=exc,
-            extra={
-                "env_presence": _effective_env_presence(),
-                "db_params": get_effective_db_params(),
-                "note": "Ensure DATABASE_URL or discrete vars are set; psycopg2 driver and sslmode=require enforced.",
-            },
-        )
-        # 503 to signal dependency unavailable, include error string for operator visibility
+        # Return detailed error to aid diagnostics
+        try:
+            eff = get_effective_db_params()
+        except Exception:
+            eff = {"url_redacted": "<unknown>"}
         raise HTTPException(
             status_code=503,
-            detail=f"database_unavailable: {str(exc)} | effective={get_effective_db_params().get('url_redacted')}",
+            detail=f"database_unavailable: {str(exc)} | effective={eff.get('url_redacted')}",
         )
