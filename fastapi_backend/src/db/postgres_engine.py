@@ -43,12 +43,20 @@ def _read_env_parts() -> Tuple[Optional[str], Optional[str], Optional[str], Opti
 
 
 def _build_url() -> str:
-    """Compose a psycopg2 SQLAlchemy URL from discrete env vars, enforcing sslmode=require."""
+    """Compose a psycopg2 SQLAlchemy URL from discrete env vars, enforcing sslmode=require and port 5432."""
     user, password, host, port, dbname = _read_env_parts()
-    if not all([user, password, host, port, dbname]):
+    if not all([user, password, host, dbname]):
         raise ValueError(
-            "Missing required environment variables in .env: user, password, host, port, dbname"
+            "Missing required environment variables in .env: user, password, host, dbname"
         )
+    # Default/enforce port 5432
+    port = port or "5432"
+    if port != "5432":
+        port = "5432"
+    # Optional IPv4 host override
+    ipv4 = (os.getenv("SUPABASE_DB_HOST_IPV4") or "").strip()
+    if ipv4:
+        host = ipv4
     return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}?sslmode=require"
 
 

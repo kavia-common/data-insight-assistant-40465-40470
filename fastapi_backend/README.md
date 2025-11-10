@@ -42,22 +42,25 @@ An .env.example is provided with all supported keys. Copy it to .env and adjust 
 cp .env.example .env
 ```
 
-Required database variable:
-- DATABASE_URL: Postgres connection string for SQLAlchemy (e.g., postgresql+psycopg2://user:pass@host:6543/postgres)
+Required database variable (preferred):
+- SUPABASE_DB_URL: Postgres connection string for SQLAlchemy (e.g., postgresql://user:pass@host:5432/postgres?sslmode=require)
+  - Scheme can be postgresql:// or postgresql+psycopg2:// (driver will be enforced automatically).
+  - Port must be 5432. Do not use 6543.
+
+Backward-compatibility:
+- If SUPABASE_DB_URL is not set, the application will fall back to DATABASE_URL (deprecated).
+- If neither are set, the application will fall back to SUPABASE_DB_CONNECTION_STRING (legacy).
+- For any of these URLs, if sslmode is not present, the app will append sslmode=require automatically for psycopg2 URLs.
 
 Alternative configuration (discrete variables):
 - If your environment provides discrete credentials, set ALL of the following keys in .env:
   user=<db user>
   password=<db password>
   host=<db host>
-  port=<db port>   # Use 6543 (updated from 5432)
+  port=<db port>   # Use 5432
   dbname=<db name>
   The application will automatically construct a SQLAlchemy URL using the psycopg2 driver and enforce sslmode=require.
   For ephemeral preview environments where pooled connections may linger, set DISABLE_DB_POOL=true to use NullPool.
-
-Backward-compatibility:
-- If DATABASE_URL is not set, the application will fall back to SUPABASE_DB_CONNECTION_STRING (deprecated).
-- For either DATABASE_URL or SUPABASE_DB_CONNECTION_STRING, if sslmode is not present, the app will append sslmode=require automatically for psycopg2 URLs.
 
 ### Supported Environment Variables
 - APP_NAME: Application name for OpenAPI metadata
@@ -274,7 +277,7 @@ Note: If ENABLE_NLQ=false, the endpoint returns 404.
 ## Supabase Integration (optional, HTTP client)
 
 This backend integrates the Supabase Python client (create_client) for HTTP-based access to your Supabase project.
-The integration is feature-flagged and never attempts direct Postgres connections on port 6543 within this path.
+The integration is feature-flagged and never attempts direct Postgres connections within this path.
 
 Feature flag and required env:
 - ENABLE_SUPABASE=true

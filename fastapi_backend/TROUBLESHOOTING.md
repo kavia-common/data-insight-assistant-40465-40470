@@ -12,7 +12,7 @@ Health endpoints `/` and `/health` never touch the database. Use them for readin
 1) psycopg2 OperationalError: "could not connect to server ... Network is unreachable"
 - Likely wrong host/port, blocked egress, or DB not accessible from your environment.
 - For Supabase, verify the direct connection host and port and that egress is allowed.
-- Some environments require port 6543 instead of 5432 (proxy). Confirm your setup.
+- Ensure you are using port 5432 (standard Postgres). The application no longer supports 6543.
 
 2) Import or startup fails due to DB URL missing
 - This project initializes the engine lazily; app should still start.

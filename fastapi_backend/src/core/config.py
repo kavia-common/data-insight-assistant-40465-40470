@@ -30,9 +30,13 @@ class Settings(BaseSettings):
     CORS_ALLOWED_ORIGINS: str = Field(default="*", description="Comma-separated list of allowed CORS origins or '*'")
 
     # Database (SQLAlchemy / PostgreSQL)
+    SUPABASE_DB_URL: Optional[str] = Field(
+        default=None,
+        description="Preferred SQLAlchemy connection string for Postgres (e.g., postgresql://user:pass@host:5432/db)",
+    )
     DATABASE_URL: Optional[str] = Field(
         default=None,
-        description="Primary SQLAlchemy connection string for Postgres (e.g., postgresql+psycopg2://user:pass@host:5432/db)",
+        description="Deprecated connection string (kept for back-compat). Prefer SUPABASE_DB_URL.",
     )
     DB_ECHO: bool = Field(default=False, description="If true, SQLAlchemy will echo SQL statements to logs")
     # Back-compat: Falls back to this if DATABASE_URL is not set
@@ -53,7 +57,7 @@ class Settings(BaseSettings):
 
     # Pydantic BaseSettings will auto-load .env from the current working dir for this module.
     # Our resolution precedence for DB URL is implemented in src/db/sqlalchemy.py:
-    #   DATABASE_URL > SUPABASE_DB_CONNECTION_STRING > discrete vars (user/password/host/port/dbname)
+    #   SUPABASE_DB_URL > DATABASE_URL > SUPABASE_DB_CONNECTION_STRING > discrete vars (user/password/host/port/dbname)
     # NOTE: Do not introduce hardcoded port defaults (e.g., 5432) in this layer to avoid masking .env values.
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

@@ -38,16 +38,19 @@ def _build_url_from_discrete_env() -> Optional[str]:
     """
     Build a Postgres SQLAlchemy URL from discrete env vars expected by some deployments:
       user, password, host, port, dbname
-    Enforces sslmode=require.
+    Enforces sslmode=require and port=5432 (default if missing).
     Returns None if any required field is missing.
     """
     user = os.getenv("user")
     password = os.getenv("password")
     host = os.getenv("host")
-    port = os.getenv("port")
+    port = os.getenv("port") or "5432"
     dbname = os.getenv("dbname")
-    if not all([user, password, host, port, dbname]):
+    if not all([user, password, host, dbname]):
         return None
+    # Enforce port 5432 (normalize if someone set 6543 etc.)
+    if port != "5432":
+        port = "5432"
     return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}?sslmode=require"
 
 
@@ -56,9 +59,9 @@ def _append_sslmode_require(url: str) -> str:
     Ensure sslmode=require is present in the connection string for psycopg2 URLs.
     If a query string already exists, append with &; otherwise, add ?sslmode=require.
     """
-    if "postgresql+psycopg2://" not in url:
+    # Apply for postgresql or postgresql+psycopg2 schemes
+    if not (url.startswith("postgresql://") or url.startswith("postgresql+psycopg2://")):
         return url
-    # If any sslmode is already present, do not duplicate; prefer require if not set.
     if "sslmode=" in url:
         return url
     return url + ("&sslmode=require" if "?" in url else "?sslmode=require")
@@ -73,35 +76,137 @@ def _ensure_psycopg2_scheme(url: str) -> str:
     return url
 
 
+def _ensure_port_5432(url: str) -> str:
+    """
+    Ensure the URL uses port 5432 explicitly. If a different port is present (e.g., 6543), it will be replaced with 5432.
+    If no port is present, 5432 will be added.
+    """
+    try:
+        if "://" not in url:
+            return url
+        scheme, rest = url.split("://", 1)
+        creds, hostpart = (rest.split("@", 1) if "@" in rest else ("", rest))
+        # Separate query
+        query = ""
+        if "?" in hostpart:
+            host_db, query = hostpart.split("?", 1)
+        else:
+            host_db = hostpart
+        # host_db format: host[:port]/db...
+        if "/" in host_db:
+            host_port, dbpath = host_db.split("/", 1)
+        else:
+            host_port, dbpath = host_db, ""
+        # Extract host and port
+        if ":" in host_port:
+            host, _port = host_port.rsplit(":", 1)
+            port = "5432"
+        else:
+            host = host_port
+            port = "5432"
+        new_host_port = f"{host}:{port}" if host else f":{port}"
+        new_host_db = f"{new_host_port}/{dbpath}" if dbpath else new_host_port
+        rebuilt = f"{scheme}://"
+        if creds:
+            rebuilt += f"{creds}@"
+        rebuilt += new_host_db
+        if query:
+            rebuilt += f"?{query}"
+        return rebuilt
+    except Exception:
+        return url
+
+
+def _apply_ipv4_host_override(url: str) -> str:
+    """
+    If SUPABASE_DB_HOST_IPV4 is set, override the host portion of the URL with that value.
+    This is a best-effort approach to prefer IPv4 without implementing a custom resolver.
+    """
+    ipv4 = (os.getenv("SUPABASE_DB_HOST_IPV4") or "").strip()
+    if not ipv4:
+        return url
+    try:
+        if "://" not in url:
+            return url
+        scheme, rest = url.split("://", 1)
+        creds, hostpart = (rest.split("@", 1) if "@" in rest else ("", rest))
+        query = ""
+        if "?" in hostpart:
+            host_db, query = hostpart.split("?", 1)
+        else:
+            host_db = hostpart
+        if "/" in host_db:
+            host_port, dbpath = host_db.split("/", 1)
+        else:
+            host_port, dbpath = host_db, ""
+        # Extract current port (if present)
+        if ":" in host_port:
+            _, port = host_port.rsplit(":", 1)
+        else:
+            port = "5432"
+        new_host_port = f"{ipv4}:{port}"
+        new_host_db = f"{new_host_port}/{dbpath}" if dbpath else new_host_port
+        rebuilt = f"{scheme}://"
+        if creds:
+            rebuilt += f"{creds}@"
+        rebuilt += new_host_db
+        if query:
+            rebuilt += f"?{query}"
+        return rebuilt
+    except Exception:
+        return url
+
+
 def _get_db_url() -> str:
     """
     Resolve database URL from environment variables.
     Priority:
-      1) DATABASE_URL (append sslmode=require if missing)
-      2) SUPABASE_DB_CONNECTION_STRING (deprecated; append sslmode=require if missing)
-      3) Discrete vars: user/password/host/port/dbname (compose with sslmode=require)
+      1) SUPABASE_DB_URL (preferred)
+      2) DATABASE_URL (deprecated)
+      3) SUPABASE_DB_CONNECTION_STRING (legacy)
+      4) Discrete vars: user/password/host/port/dbname (compose)
+    Normalization:
+      - Enforce psycopg2 driver
+      - Enforce explicit port 5432 (replace any other port)
+      - Append sslmode=require if missing
+      - Apply IPv4 host override via SUPABASE_DB_HOST_IPV4 if provided
     Raises ValueError if missing to make failures explicit at first DB access (not import).
     """
     settings = get_settings()
-    url = (settings.DATABASE_URL or "").strip()
-    if url:
-        url = _ensure_psycopg2_scheme(url)
-        return _append_sslmode_require(url)
+    primary = (getattr(settings, "SUPABASE_DB_URL", None) or "").strip()
+    if primary:
+        url = _ensure_psycopg2_scheme(primary)
+        url = _ensure_port_5432(url)
+        url = _append_sslmode_require(url)
+        url = _apply_ipv4_host_override(url)
+        return url
+
+    url2 = (settings.DATABASE_URL or "").strip()
+    if url2:
+        url2 = _ensure_psycopg2_scheme(url2)
+        url2 = _ensure_port_5432(url2)
+        url2 = _append_sslmode_require(url2)
+        url2 = _apply_ipv4_host_override(url2)
+        return url2
 
     legacy = (settings.SUPABASE_DB_CONNECTION_STRING or "").strip()
     if legacy:
         legacy = _ensure_psycopg2_scheme(legacy)
-        return _append_sslmode_require(legacy)
+        legacy = _ensure_port_5432(legacy)
+        legacy = _append_sslmode_require(legacy)
+        legacy = _apply_ipv4_host_override(legacy)
+        return legacy
 
     # Fallback to discrete environment variables
     composed = _build_url_from_discrete_env()
     if composed:
+        composed = _apply_ipv4_host_override(_ensure_port_5432(composed))
         return composed
 
     raise ValueError(
         "Database configuration not found. Provide one of: "
-        "DATABASE_URL, SUPABASE_DB_CONNECTION_STRING, or discrete env vars "
-        "(user, password, host, port, dbname)."
+        "SUPABASE_DB_URL (preferred), DATABASE_URL (deprecated), SUPABASE_DB_CONNECTION_STRING (legacy), "
+        "or discrete env vars (user, password, host, port, dbname)."
     )
 
 
@@ -153,6 +258,7 @@ def _effective_db_params(url: str) -> Dict[str, Any]:
             host, port = host_port.rsplit(":", 1)
         else:
             host = host_port or None
+            port = "5432" if host else None
     return {
         "url_redacted": redacted,
         "driver": "psycopg2" if "psycopg2" in url else "unknown",

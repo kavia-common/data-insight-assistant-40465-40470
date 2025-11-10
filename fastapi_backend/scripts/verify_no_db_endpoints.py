@@ -4,7 +4,7 @@ Verify that /health and /debug/config return 200 without any database connectivi
 
 This script assumes the FastAPI app is running on 127.0.0.1:<PORT> (default 3001).
 It does not require an actual database. It is intended to be run in environments where
-the configured DB is intentionally unreachable on port 6543.
+the configured DB is intentionally unreachable.
 
 Usage:
   python scripts/verify_no_db_endpoints.py
