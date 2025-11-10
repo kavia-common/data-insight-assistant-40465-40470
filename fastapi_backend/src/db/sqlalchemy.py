@@ -15,6 +15,7 @@ Design:
 
 from typing import Generator, Optional, Dict, Any
 import os
+import socket
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -32,6 +33,11 @@ Base = declarative_base()
 # Module-level cached engine and session factory (lazy init)
 _engine: Optional[Engine] = None
 _SessionLocal: Optional[sessionmaker] = None
+
+# Track last resolved address family and host for diagnostics
+_last_address_family: Optional[str] = None
+_last_effective_host: Optional[str] = None
+_last_effective_port: Optional[str] = None
 
 
 def _build_url_from_discrete_env() -> Optional[str]:
@@ -121,9 +127,12 @@ def _apply_ipv4_host_override(url: str) -> str:
     """
     If SUPABASE_DB_HOST_IPV4 is set, override the host portion of the URL with that value.
     This is a best-effort approach to prefer IPv4 without implementing a custom resolver.
+    Also stores effective host/port into module-level trackers for logging.
     """
+    global _last_effective_host, _last_effective_port, _last_address_family
     ipv4 = (os.getenv("SUPABASE_DB_HOST_IPV4") or "").strip()
     if not ipv4:
+        # Will try to prefer IPv4 via connect args when possible
         return url
     try:
         if "://" not in url:
@@ -144,6 +153,9 @@ def _apply_ipv4_host_override(url: str) -> str:
             _, port = host_port.rsplit(":", 1)
         else:
             port = "5432"
+        _last_effective_host = ipv4
+        _last_effective_port = port
+        _last_address_family = "IPv4"
         new_host_port = f"{ipv4}:{port}"
         new_host_db = f"{new_host_port}/{dbpath}" if dbpath else new_host_port
         rebuilt = f"{scheme}://"
@@ -285,7 +297,7 @@ def _ensure_engine_initialized() -> None:
     Initialize the SQLAlchemy engine and session factory if not already done.
     This function is idempotent and safe to call multiple times.
     """
-    global _engine, _SessionLocal
+    global _engine, _SessionLocal, _last_address_family, _last_effective_host, _last_effective_port
     if _engine is not None and _SessionLocal is not None:
         return
     settings = get_settings()
@@ -293,13 +305,93 @@ def _ensure_engine_initialized() -> None:
 
     # Allow disabling pooling in ephemeral preview environments to avoid stale connections.
     use_null_pool = bool(os.getenv("DISABLE_DB_POOL", "").lower() in ("1", "true", "yes"))
-    engine_kwargs = {
+    engine_kwargs: Dict[str, Any] = {
         "pool_pre_ping": True,
         "future": True,
         "echo": bool(settings.DB_ECHO),
     }
     if use_null_pool:
         engine_kwargs["poolclass"] = NullPool  # type: ignore[assignment]
+
+    # Prefer IPv4:
+    # - If SUPABASE_DB_HOST_IPV4 is set, URL already has IPv4 and we just log.
+    # - Otherwise, for psycopg2, we can pass connect_args to prefer IPv4 at libpq socket level.
+    #   We use a creator function that resolves A records and connects to the first IPv4.
+    force_ipv4_env = (os.getenv("SUPABASE_DB_HOST_IPV4") or "").strip()
+    try:
+        if "psycopg2" in db_url and not force_ipv4_env:
+            import psycopg2  # type: ignore
+            from urllib.parse import urlparse, parse_qsl, urlunparse, urlencode
+
+            parsed = urlparse(db_url)
+            # Extract connection params for psycopg2.connect
+            q = dict(parse_qsl(parsed.query))
+            hostpart = parsed.netloc
+            if "@" in parsed.netloc:
+                # strip credentials for host extraction
+                hostpart = parsed.netloc.split("@", 1)[1]
+            host = hostpart
+            port = "5432"
+            if ":" in hostpart:
+                host, port = hostpart.rsplit(":", 1)
+            dbname = parsed.path.lstrip("/") if parsed.path else ""
+            user = None
+            password = None
+            if "@" in parsed.netloc:
+                creds = parsed.netloc.split("@", 1)[0]
+                if ":" in creds:
+                    user, password = creds.split(":", 1)
+                else:
+                    user = creds
+
+            def _creator():
+                # Resolve IPv4 only; fall back to system if none found
+                try:
+                    infos = socket.getaddrinfo(host, int(port or "5432"), socket.AF_INET, socket.SOCK_STREAM)
+                    addr = infos[0][4]
+                    _host = addr[0]
+                    _port = str(addr[1])
+                    # update module-level trackers
+                    nonlocal_host = _host  # simple alias for clarity
+                    nonlocal_port = _port
+                    # store values in module-level globals
+                    # using closure write to globals via enclosing names
+                    # pylint: disable=global-statement
+                    # flake8 will not complain as we don't create unused locals
+                    globals()["_last_effective_host"] = nonlocal_host
+                    globals()["_last_effective_port"] = nonlocal_port
+                    globals()["_last_address_family"] = "IPv4"
+                    return psycopg2.connect(
+                        host=_host,
+                        port=_port,
+                        user=user,
+                        password=password,
+                        dbname=dbname,
+                        sslmode=q.get("sslmode", "require"),
+                    )
+                except Exception:
+                    # Fallback to default resolver (could be IPv6)
+                    globals()["_last_address_family"] = "system"
+                    globals()["_last_effective_host"] = host
+                    globals()["_last_effective_port"] = port
+                    return psycopg2.connect(db_url)
+
+            engine_kwargs["creator"] = _creator  # type: ignore[assignment]
+        else:
+            # Already forced IPv4 by host override or not psycopg2; record family if known
+            if force_ipv4_env:
+                _last_address_family = "IPv4"
+                _last_effective_host = force_ipv4_env
+                # Attempt to parse port from URL
+                try:
+                    hp = db_url.split("://", 1)[1].split("@", 1)[-1]
+                    hp = hp.split("/", 1)[0]
+                    _last_effective_port = hp.split(":", 1)[1] if ":" in hp else "5432"
+                except Exception:
+                    _last_effective_port = "5432"
+    except Exception:
+        # Do not block engine creation on IPv4 preference logic
+        pass
 
     _engine = create_engine(db_url, **engine_kwargs)
     _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False, class_=Session, future=True)
@@ -310,6 +402,9 @@ def _ensure_engine_initialized() -> None:
         extra={
             "echo": bool(settings.DB_ECHO),
             "pool": ("NullPool" if use_null_pool else "Default"),
+            "address_family": _last_address_family or ("IPv4" if (os.getenv("SUPABASE_DB_HOST_IPV4") or "").strip() else "system"),
+            "effective_host": _last_effective_host or eff.get("host"),
+            "effective_port": _last_effective_port or eff.get("port"),
             **eff,
         },
     )

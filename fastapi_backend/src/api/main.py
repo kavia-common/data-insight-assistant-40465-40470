@@ -10,6 +10,7 @@ from ..routers.nlq import router as nlq_router
 from ..routers.supabase import router as supabase_router
 from ..routers.supabase_ping import router as supabase_ping_router
 from ..routers.debug import router as debug_router
+from ..routers.db_health import router as db_health_router
 
 # Important: avoid creating DB connections at import time.
 # We only import lightweight helpers here; actual engine/session are created lazily within routes/startup.
@@ -86,6 +87,7 @@ app.include_router(nlq_router)
 app.include_router(supabase_router)
 app.include_router(supabase_ping_router)
 app.include_router(debug_router)
+app.include_router(db_health_router)
 
 
 if __name__ == "__main__":

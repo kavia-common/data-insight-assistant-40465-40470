@@ -135,7 +135,8 @@ Health and diagnostics endpoints:
 - GET / -> {"message":"Healthy"}  (root alias)
 - GET /health -> {"status":"ok"} (strictly no-DB; never imports or initializes DB)
 - GET /health/healthz -> {"status":"ok"} (alias; strictly no-DB)
-- GET /health/db -> {"status":"ok"} (the only endpoint that attempts DB connectivity via SELECT 1)
+- GET /health/db -> {"status":"ok"} (DB connectivity via SELECT 1, legacy path)
+- GET /db/health -> {"status":"ok"} (DB connectivity via SELECT 1; logs selected address family and effective host/port)
 
 For readiness checks, probe:
 ```

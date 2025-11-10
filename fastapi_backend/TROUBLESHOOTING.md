@@ -72,9 +72,21 @@ Optional for previews:
 Once configured, call:
 ```
 curl -s http://127.0.0.1:3001/health/db
+curl -s http://127.0.0.1:3001/db/health
 ```
 - 200 {"status":"ok"} => DB reachable
 - 503 with details => check `debug/config` for redacted URL and env precedence.
+
+### Prefer IPv4 for Supabase
+
+If your environment selects IPv6 and cannot reach Supabase, set:
+```
+SUPABASE_DB_HOST_IPV4="<project>.supabase.co's IPv4 address"
+```
+The backend will:
+- Replace the host in the connection URL with this IPv4.
+- Keep sslmode=require and port 5432 enforced.
+If not set, the engine attempts to prefer IPv4 by using an IPv4 resolver when possible (psycopg2). Logs include the selected address family and effective host/port.
 
 ## Supabase HTTP Client
 
